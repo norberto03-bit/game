@@ -53,9 +53,105 @@ export default function GameCanvas({
   const joystickBaseRef = useRef<HTMLDivElement | null>(null);
   const touchKeysRef = useRef<{ [key: string]: boolean }>({});
 
+  const backgroundImgRef = useRef<HTMLImageElement | null>(null);
+  const marioSpriteImgRef = useRef<HTMLImageElement | null>(null);
+  const [bgFileLoaded, setBgFileLoaded] = useState<boolean>(false);
+  const [marioFileLoaded, setMarioFileLoaded] = useState<boolean>(false);
+
   useEffect(() => {
     // Auto-detect touch device & default touch features - kept false by default to prevent duplication with bottom gamepad
     setShowTouchOverlay(false);
+
+    // 1. Try multiple filename permutations for the background image
+    const bgFilenames = [
+      'fondo_nivel_1.png',
+      'nivel_1_fondo.png',
+      'fondo1.png',
+      'background.png',
+      'assets/fondo_nivel_1.png',
+      'assets/nivel_1_fondo.png',
+      'src/assets/fondo_nivel_1.png'
+    ];
+
+    const loadBgImage = (index: number) => {
+      if (index >= bgFilenames.length) {
+        console.log('No custom level 1 background image found in server directories. Relying on gorgeous vector graphics fallback!');
+        return;
+      }
+      const img = new Image();
+      let srcPath = bgFilenames[index];
+      img.src = srcPath.startsWith('/') ? srcPath : '/' + srcPath;
+      
+      img.onload = () => {
+        backgroundImgRef.current = img;
+        setBgFileLoaded(true);
+        console.log(`🎉 Custom background for Level 1 successfully loaded from: ${srcPath}`);
+      };
+      
+      img.onerror = () => {
+        if (!srcPath.includes('/public/')) {
+          const alternateImg = new Image();
+          alternateImg.src = '/public/' + bgFilenames[index];
+          alternateImg.onload = () => {
+            backgroundImgRef.current = alternateImg;
+            setBgFileLoaded(true);
+            console.log(`🎉 Custom background for Level 1 successfully loaded from: /public/${bgFilenames[index]}`);
+          };
+          alternateImg.onerror = () => {
+            loadBgImage(index + 1);
+          };
+        } else {
+          loadBgImage(index + 1);
+        }
+      };
+    };
+
+    loadBgImage(0);
+
+    // 2. Try multiple filename permutations for the Mario sprite
+    const marioFilenames = [
+      'mario.png',
+      'mario_spritesheet.png',
+      'super_mario.png',
+      'sprites/mario.png',
+      'assets/mario.png',
+      'src/assets/mario.png'
+    ];
+
+    const loadMarioImage = (index: number) => {
+      if (index >= marioFilenames.length) {
+        console.log('No custom Mario PNG sprite sheet found in server directories. Relying on retro 16-bit canvas matrix drawer!');
+        return;
+      }
+      const img = new Image();
+      let srcPath = marioFilenames[index];
+      img.src = srcPath.startsWith('/') ? srcPath : '/' + srcPath;
+
+      img.onload = () => {
+        marioSpriteImgRef.current = img;
+        setMarioFileLoaded(true);
+        console.log(`🎉 Custom Mario sprite successfully loaded from: ${srcPath}`);
+      };
+      
+      img.onerror = () => {
+        if (!srcPath.includes('/public/')) {
+          const alternateImg = new Image();
+          alternateImg.src = '/public/' + marioFilenames[index];
+          alternateImg.onload = () => {
+            marioSpriteImgRef.current = alternateImg;
+            setMarioFileLoaded(true);
+            console.log(`🎉 Custom Mario sprite successfully loaded from: /public/${marioFilenames[index]}`);
+          };
+          alternateImg.onerror = () => {
+            loadMarioImage(index + 1);
+          };
+        } else {
+          loadMarioImage(index + 1);
+        }
+      };
+    };
+
+    loadMarioImage(0);
   }, []);
   
   // Refs to hold mutable, high-frequency game loop data (avoids react state re-render lag)
@@ -2683,262 +2779,267 @@ export default function GameCanvas({
     };
 
     if (theme === 'green') {
-      // 1. Celestial blue sky gradient (matches the transparent grid blue vibe with clean morning sun)
-      const skyGrad = ctx.createLinearGradient(0, 0, 0, canvas.height);
-      skyGrad.addColorStop(0, '#7dd3fc'); // sky-300 light sky blue
-      skyGrad.addColorStop(0.6, '#bae6fd'); // sky-200 very light sky blue
-      skyGrad.addColorStop(1, '#f0f9ff'); // sky-50 softest horizon blue
-      ctx.fillStyle = skyGrad;
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      if (bgFileLoaded && backgroundImgRef.current) {
+        // Draw the uploaded high-resolution retro background directly, aligned to the camera scroll!
+        ctx.drawImage(backgroundImgRef.current, -camX, 0, 2400, canvas.height);
+      } else {
+        // 1. Celestial blue sky gradient (matches the transparent grid blue vibe with clean morning sun)
+        const skyGrad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+        skyGrad.addColorStop(0, '#7dd3fc'); // sky-300 light sky blue
+        skyGrad.addColorStop(0.6, '#bae6fd'); // sky-200 very light sky blue
+        skyGrad.addColorStop(1, '#f0f9ff'); // sky-50 softest horizon blue
+        ctx.fillStyle = skyGrad;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      // 2. Multi-speed floating fluffy white clouds
-      drawClouds(0.015);
+        // 2. Multi-speed floating fluffy white clouds
+        drawClouds(0.015);
 
-      // --- PARALLAX BACKGROUND HILLS & VALLEYS ---
-      // Distant rolling meadow ridges (Parallax layer 0 / slow)
-      ctx.fillStyle = '#86efac'; // green-300 distant soft hills
-      ctx.save();
-      ctx.globalAlpha = 0.35;
-      ctx.beginPath();
-      ctx.moveTo(0, canvas.height);
-      ctx.lineTo(0, 290);
-      ctx.quadraticCurveTo(200 - camX * 0.03, 240, 400 - camX * 0.03, 270);
-      ctx.quadraticCurveTo(800 - camX * 0.03, 220, 1200 - camX * 0.03, 280);
-      ctx.quadraticCurveTo(1600 - camX * 0.03, 230, 2000 - camX * 0.03, 260);
-      ctx.lineTo(canvas.width, 290);
-      ctx.lineTo(canvas.width, canvas.height);
-      ctx.closePath();
-      ctx.fill();
-      ctx.restore();
-
-      // Midground layered ridges (Parallax layer 1)
-      ctx.fillStyle = '#4ade80'; // green-400 midground lush hills
-      ctx.save();
-      ctx.globalAlpha = 0.55;
-      ctx.beginPath();
-      ctx.moveTo(0, canvas.height);
-      ctx.lineTo(0, 310);
-      ctx.quadraticCurveTo(250 - camX * 0.08, 260, 500 - camX * 0.08, 290);
-      ctx.quadraticCurveTo(1000 - camX * 0.08, 250, 1500 - camX * 0.08, 300);
-      ctx.quadraticCurveTo(1900 - camX * 0.08, 260, canvas.width, 310);
-      ctx.lineTo(canvas.width, canvas.height);
-      ctx.closePath();
-      ctx.fill();
-      ctx.restore();
-
-      // --- THE THREE PRIMARY UNIQUE ZONES ---
-
-      // --- ZONE 1: THE LUSH PINE FOREST (0px to 800px along game world) ---
-      // Draw various procedural tall pines and rich thickets!
-      const drawPineTreeBg = (x: number, y: number, h: number, tone: 'dark' | 'bright') => {
-        const trX = x - camX * 0.25; // forest parallax
-        if (trX < -100 || trX > canvas.width + 100) return;
-
-        // Trunk
-        ctx.fillStyle = tone === 'dark' ? '#5c4033' : '#8b5a2b';
-        ctx.fillRect(trX - 3, y - h, 6, h);
-
-        // Triangular foliage layers
-        ctx.fillStyle = tone === 'dark' ? '#14532d' : '#166534'; // evergreen shades
-        
-        ctx.beginPath();
-        // Layer 1 (Bottom)
-        ctx.moveTo(trX - 25, y - h + 15);
-        ctx.lineTo(trX, y - h - 15);
-        ctx.lineTo(trX + 25, y - h + 15);
-        ctx.closePath();
-        ctx.fill();
-
-        ctx.beginPath();
-        // Layer 2 (Middle)
-        ctx.moveTo(trX - 20, y - h - 5);
-        ctx.lineTo(trX, y - h - 35);
-        ctx.lineTo(trX + 20, y - h - 5);
-        ctx.closePath();
-        ctx.fill();
-
-        ctx.beginPath();
-        // Layer 3 (Top)
-        ctx.moveTo(trX - 14, y - h - 25);
-        ctx.lineTo(trX, y - h - 55);
-        ctx.lineTo(trX + 14, y - h - 25);
-        ctx.closePath();
-        ctx.fill();
-        
-        // Specular gold tip highlights from morning sun
-        ctx.fillStyle = tone === 'dark' ? '#15803d' : '#22c55e';
-        ctx.beginPath();
-        ctx.moveTo(trX - 4, y - h - 25);
-        ctx.lineTo(trX, y - h - 35);
-        ctx.lineTo(trX + 4, y - h - 25);
-        ctx.closePath();
-        ctx.fill();
-      };
-
-      // Draw background pines in left forest zone (x from 0 to 750)
-      const pineSeeds = [
-        { x: 50, h: 90, tone: 'dark' },
-        { x: 120, h: 120, tone: 'bright' },
-        { x: 180, h: 100, tone: 'dark' },
-        { x: 260, h: 110, tone: 'bright' },
-        { x: 340, h: 80, tone: 'dark' },
-        { x: 410, h: 130, tone: 'bright' },
-        { x: 490, h: 95, tone: 'dark' },
-        { x: 580, h: 125, tone: 'bright' },
-        { x: 670, h: 105, tone: 'dark' },
-        { x: 740, h: 115, tone: 'bright' }
-      ];
-      pineSeeds.forEach(p => drawPineTreeBg(p.x, 390, p.h, p.tone as 'dark' | 'bright'));
-
-
-      // --- ZONE 2: RAMP/PYRAMID MOUNTAIN AND WATERFALL (800px to 1600px) ---
-      // Draw a majestic gray rocky cliff wall, stepped pyramid steps on left, cascading white foaming waterfall, and ancient carved stone slabs.
-      const mountX = 990 - camX * 0.45; // mountainside parallax
-      if (mountX > -450 && mountX < canvas.width + 450) {
-        // Main basalt cliff body
-        ctx.fillStyle = '#94a3b8'; // slate-400 cool ancient stone gray
-        ctx.beginPath();
-        ctx.moveTo(mountX - 250, 420);
-        ctx.lineTo(mountX - 180, 240); // pyramidal step transition
-        ctx.lineTo(mountX - 70, 110); // high cliff edge
-        ctx.lineTo(mountX + 250, 110); // flat high ridge
-        ctx.lineTo(mountX + 350, 260); // right cliff edge
-        ctx.lineTo(mountX + 420, 420);
-        ctx.closePath();
-        ctx.fill();
-
-        // Left steps texture drawing (matching pyramid shape steps of background)
-        ctx.fillStyle = '#cbd5e1'; // slate-300 lighter highlight steps
-        for (let i = 0; i < 4; i++) {
-          const stepW = 35 + i * 8;
-          ctx.fillRect(mountX - 220 + i * 36, 310 - i * 45, stepW, 10);
-        }
-
-        // Draw animated cascading waterfall on the steps!
-        ctx.fillStyle = '#0284c7'; // deep cascade teal blue
-        ctx.fillRect(mountX - 110, 110, 40, 310);
-
-        // Animated white water cascades
-        ctx.fillStyle = '#ffffff';
+        // --- PARALLAX BACKGROUND HILLS & VALLEYS ---
+        // Distant rolling meadow ridges (Parallax layer 0 / slow)
+        ctx.fillStyle = '#86efac'; // green-300 distant soft hills
         ctx.save();
-        ctx.globalAlpha = 0.65 + Math.sin(Date.now() * 0.05) * 0.2;
-        for (let j = 0; j < 6; j++) {
-          const lineY = 110 + (Date.now() * 0.22 + j * 60) % 270;
-          ctx.fillRect(mountX - 105 + j * 6, lineY, 3, 40);
-        }
+        ctx.globalAlpha = 0.35;
+        ctx.beginPath();
+        ctx.moveTo(0, canvas.height);
+        ctx.lineTo(0, 290);
+        ctx.quadraticCurveTo(200 - camX * 0.03, 240, 400 - camX * 0.03, 270);
+        ctx.quadraticCurveTo(800 - camX * 0.03, 220, 1200 - camX * 0.03, 280);
+        ctx.quadraticCurveTo(1600 - camX * 0.03, 230, 2000 - camX * 0.03, 260);
+        ctx.lineTo(canvas.width, 290);
+        ctx.lineTo(canvas.width, canvas.height);
+        ctx.closePath();
+        ctx.fill();
         ctx.restore();
 
-        // Water mist splash splash at the mountain steps bottom base
-        ctx.fillStyle = 'rgba(240, 249, 255, 0.85)';
-        for (let s = 0; s < 4; s++) {
-          const bx = mountX - 115 + s * 11 + Math.sin(Date.now() * 0.015 + s) * 2;
+        // Midground layered ridges (Parallax layer 1)
+        ctx.fillStyle = '#4ade80'; // green-400 midground lush hills
+        ctx.save();
+        ctx.globalAlpha = 0.55;
+        ctx.beginPath();
+        ctx.moveTo(0, canvas.height);
+        ctx.lineTo(0, 310);
+        ctx.quadraticCurveTo(250 - camX * 0.08, 260, 500 - camX * 0.08, 290);
+        ctx.quadraticCurveTo(1000 - camX * 0.08, 250, 1500 - camX * 0.08, 300);
+        ctx.quadraticCurveTo(1900 - camX * 0.08, 260, canvas.width, 310);
+        ctx.lineTo(canvas.width, canvas.height);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+
+        // --- THE THREE PRIMARY UNIQUE ZONES ---
+
+        // --- ZONE 1: THE LUSH PINE FOREST (0px to 800px along game world) ---
+        // Draw various procedural tall pines and rich thickets!
+        const drawPineTreeBg = (x: number, y: number, h: number, tone: 'dark' | 'bright') => {
+          const trX = x - camX * 0.25; // forest parallax
+          if (trX < -100 || trX > canvas.width + 100) return;
+
+          // Trunk
+          ctx.fillStyle = tone === 'dark' ? '#5c4033' : '#8b5a2b';
+          ctx.fillRect(trX - 3, y - h, 6, h);
+
+          // Triangular foliage layers
+          ctx.fillStyle = tone === 'dark' ? '#14532d' : '#166534'; // evergreen shades
+          
           ctx.beginPath();
-          ctx.arc(bx, 385, 10 + (s % 2) * 4, 0, Math.PI * 2);
+          // Layer 1 (Bottom)
+          ctx.moveTo(trX - 25, y - h + 15);
+          ctx.lineTo(trX, y - h - 15);
+          ctx.lineTo(trX + 25, y - h + 15);
+          ctx.closePath();
           ctx.fill();
+
+          ctx.beginPath();
+          // Layer 2 (Middle)
+          ctx.moveTo(trX - 20, y - h - 5);
+          ctx.lineTo(trX, y - h - 35);
+          ctx.lineTo(trX + 20, y - h - 5);
+          ctx.closePath();
+          ctx.fill();
+
+          ctx.beginPath();
+          // Layer 3 (Top)
+          ctx.moveTo(trX - 14, y - h - 25);
+          ctx.lineTo(trX, y - h - 55);
+          ctx.lineTo(trX + 14, y - h - 25);
+          ctx.closePath();
+          ctx.fill();
+          
+          // Specular gold tip highlights from morning sun
+          ctx.fillStyle = tone === 'dark' ? '#15803d' : '#22c55e';
+          ctx.beginPath();
+          ctx.moveTo(trX - 4, y - h - 25);
+          ctx.lineTo(trX, y - h - 35);
+          ctx.lineTo(trX + 4, y - h - 25);
+          ctx.closePath();
+          ctx.fill();
+        };
+
+        // Draw background pines in left forest zone (x from 0 to 750)
+        const pineSeeds = [
+          { x: 50, h: 90, tone: 'dark' },
+          { x: 120, h: 120, tone: 'bright' },
+          { x: 180, h: 100, tone: 'dark' },
+          { x: 260, h: 110, tone: 'bright' },
+          { x: 340, h: 80, tone: 'dark' },
+          { x: 410, h: 130, tone: 'bright' },
+          { x: 490, h: 95, tone: 'dark' },
+          { x: 580, h: 125, tone: 'bright' },
+          { x: 670, h: 105, tone: 'dark' },
+          { x: 740, h: 115, tone: 'bright' }
+        ];
+        pineSeeds.forEach(p => drawPineTreeBg(p.x, 390, p.h, p.tone as 'dark' | 'bright'));
+
+
+        // --- ZONE 2: RAMP/PYRAMID MOUNTAIN AND WATERFALL (800px to 1600px) ---
+        // Draw a majestic gray rocky cliff wall, stepped pyramid steps on left, cascading white foaming waterfall, and ancient carved stone slabs.
+        const mountX = 990 - camX * 0.45; // mountainside parallax
+        if (mountX > -450 && mountX < canvas.width + 450) {
+          // Main basalt cliff body
+          ctx.fillStyle = '#94a3b8'; // slate-400 cool ancient stone gray
+          ctx.beginPath();
+          ctx.moveTo(mountX - 250, 420);
+          ctx.lineTo(mountX - 180, 240); // pyramidal step transition
+          ctx.lineTo(mountX - 70, 110); // high cliff edge
+          ctx.lineTo(mountX + 250, 110); // flat high ridge
+          ctx.lineTo(mountX + 350, 260); // right cliff edge
+          ctx.lineTo(mountX + 420, 420);
+          ctx.closePath();
+          ctx.fill();
+
+          // Left steps texture drawing (matching pyramid shape steps of background)
+          ctx.fillStyle = '#cbd5e1'; // slate-300 lighter highlight steps
+          for (let i = 0; i < 4; i++) {
+            const stepW = 35 + i * 8;
+            ctx.fillRect(mountX - 220 + i * 36, 310 - i * 45, stepW, 10);
+          }
+
+          // Draw animated cascading waterfall on the steps!
+          ctx.fillStyle = '#0284c7'; // deep cascade teal blue
+          ctx.fillRect(mountX - 110, 110, 40, 310);
+
+          // Animated white water cascades
+          ctx.fillStyle = '#ffffff';
+          ctx.save();
+          ctx.globalAlpha = 0.65 + Math.sin(Date.now() * 0.05) * 0.2;
+          for (let j = 0; j < 6; j++) {
+            const lineY = 110 + (Date.now() * 0.22 + j * 60) % 270;
+            ctx.fillRect(mountX - 105 + j * 6, lineY, 3, 40);
+          }
+          ctx.restore();
+
+          // Water mist splash splash at the mountain steps bottom base
+          ctx.fillStyle = 'rgba(240, 249, 255, 0.85)';
+          for (let s = 0; s < 4; s++) {
+            const bx = mountX - 115 + s * 11 + Math.sin(Date.now() * 0.015 + s) * 2;
+            ctx.beginPath();
+            ctx.arc(bx, 385, 10 + (s % 2) * 4, 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          // Deep basalt ridges shadows
+          ctx.strokeStyle = '#475569'; // slate-600 cracks
+          ctx.lineWidth = 2.5;
+          ctx.beginPath();
+          ctx.moveTo(mountX - 45, 110);
+          ctx.lineTo(mountX - 30, 230);
+          ctx.lineTo(mountX + 10, 310);
+          
+          ctx.moveTo(mountX + 120, 110);
+          ctx.lineTo(mountX + 110, 260);
+          ctx.lineTo(mountX + 150, 395);
+          ctx.stroke();
+
+          // Ancient Carved Runes/Glyphs on the face of the stone ruins!
+          ctx.fillStyle = '#334155'; // slate-700 engraving color
+          ctx.font = 'bold 15px monospace';
+          ctx.textAlign = 'center';
+          // Glyph block 1
+          ctx.fillText('𓀀', mountX + 30, 170);
+          ctx.fillText('𓃠', mountX + 70, 170);
+          ctx.fillText('𓅓', mountX + 30, 210);
+          // Glyph block 2
+          ctx.fillText('☼', mountX + 170, 190);
+          ctx.fillText('☾', mountX + 170, 220);
+
+          // Small primitive cave hut base
+          ctx.fillStyle = '#475569';
+          ctx.fillRect(mountX + 100, 315, 60, 45);
+          ctx.fillStyle = '#1e293b'; // dark doorway
+          ctx.fillRect(mountX + 118, 328, 24, 32);
         }
 
-        // Deep basalt ridges shadows
-        ctx.strokeStyle = '#475569'; // slate-600 cracks
-        ctx.lineWidth = 2.5;
-        ctx.beginPath();
-        ctx.moveTo(mountX - 45, 110);
-        ctx.lineTo(mountX - 30, 230);
-        ctx.lineTo(mountX + 10, 310);
-        
-        ctx.moveTo(mountX + 120, 110);
-        ctx.lineTo(mountX + 110, 260);
-        ctx.lineTo(mountX + 150, 395);
-        ctx.stroke();
 
-        // Ancient Carved Runes/Glyphs on the face of the stone ruins!
-        ctx.fillStyle = '#334155'; // slate-700 engraving color
-        ctx.font = 'bold 15px monospace';
-        ctx.textAlign = 'center';
-        // Glyph block 1
-        ctx.fillText('𓀀', mountX + 30, 170);
-        ctx.fillText('𓃠', mountX + 70, 170);
-        ctx.fillText('𓅓', mountX + 30, 210);
-        // Glyph block 2
-        ctx.fillText('☼', mountX + 170, 190);
-        ctx.fillText('☾', mountX + 170, 220);
-
-        // Small primitive cave hut base
-        ctx.fillStyle = '#475569';
-        ctx.fillRect(mountX + 100, 315, 60, 45);
-        ctx.fillStyle = '#1e293b'; // dark doorway
-        ctx.fillRect(mountX + 118, 328, 24, 32);
-      }
-
-
-      // --- ZONE 3: CLAY MEADOWS, RIVER & CACTI (1600px to 2400px) ---
-      // A gorgeous winding blue river that curves from bottom-center off to the right horizon
-      const riverXStart = 1550 - camX * 0.25;
-      if (riverXStart > -300 && riverXStart < canvas.width + 300) {
-        ctx.fillStyle = '#3b82f6'; // beautiful sky blue river winding
-        ctx.save();
-        ctx.beginPath();
-        ctx.moveTo(riverXStart, 420);
-        ctx.bezierCurveTo(riverXStart + 120, 400, riverXStart + 220, 310, riverXStart + 350, 280); // Winding curve
-        ctx.lineTo(riverXStart + 390, 280);
-        ctx.bezierCurveTo(riverXStart + 270, 310, riverXStart + 200, 400, riverXStart + 80, 420);
-        ctx.closePath();
-        ctx.fill();
-        ctx.restore();
-      }
-
-      // Draw gorgeous desert cardón cacti & agaves
-      const drawCactusBg = (x: number, y: number, size: number) => {
-        const cx = x - camX * 0.22; // cactus parallax
-        if (cx < -50 || cx > canvas.width + 50) return;
-
-        ctx.fillStyle = '#15803d'; // green-700
-        // Trunk
-        ctx.fillRect(cx - 3, y - size, 6, size);
-        // Left arm
-        ctx.fillRect(cx - 10, y - size + 10, 8, 3);
-        ctx.fillRect(cx - 10, y - size + 2, 3, 10);
-        // Right arm
-        ctx.fillRect(cx, y - size + 16, 11, 3);
-        ctx.fillRect(cx + 9, y - size + 6, 3, 11);
-      };
-
-      const drawAgaveBg = (x: number, y: number) => {
-        const ax = x - camX * 0.22;
-        if (ax < -40 || ax > canvas.width + 40) return;
-
-        ctx.fillStyle = '#166534'; // darker agave
-        ctx.beginPath();
-        ctx.moveTo(ax - 10, y);
-        ctx.lineTo(ax, y - 12);
-        ctx.lineTo(ax + 10, y);
-        ctx.lineTo(ax - 6, y);
-        ctx.lineTo(ax - 12, y - 6);
-        ctx.lineTo(ax + 12, y - 6);
-        ctx.closePath();
-        ctx.fill();
-      };
-
-      // Scatter background plants in right desert zone (1600 to 2400)
-      const desertPlants = [
-        { x: 1620, type: 'agave' },
-        { x: 1710, type: 'cactus', h: 32 },
-        { x: 1840, type: 'agave' },
-        { x: 1950, type: 'cactus', h: 26 },
-        { x: 2060, type: 'agave' },
-        { x: 2180, type: 'cactus', h: 36 },
-        { x: 2320, type: 'agave' }
-      ];
-      desertPlants.forEach(p => {
-        if (p.type === 'cactus') {
-          drawCactusBg(p.x, 390, p.h!);
-        } else {
-          drawAgaveBg(p.x, 390);
+        // --- ZONE 3: CLAY MEADOWS, RIVER & CACTI (1600px to 2400px) ---
+        // A gorgeous winding blue river that curves from bottom-center off to the right horizon
+        const riverXStart = 1550 - camX * 0.25;
+        if (riverXStart > -300 && riverXStart < canvas.width + 300) {
+          ctx.fillStyle = '#3b82f6'; // beautiful sky blue river winding
+          ctx.save();
+          ctx.beginPath();
+          ctx.moveTo(riverXStart, 420);
+          ctx.bezierCurveTo(riverXStart + 120, 400, riverXStart + 220, 310, riverXStart + 350, 280); // Winding curve
+          ctx.lineTo(riverXStart + 390, 280);
+          ctx.bezierCurveTo(riverXStart + 270, 310, riverXStart + 200, 400, riverXStart + 80, 420);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
         }
-      });
 
-      // Bottom grass margin boundary to ground them
-      ctx.fillStyle = '#22c55e'; // green-500
-      ctx.fillRect(0, 390, canvas.width, 3);
+        // Draw gorgeous desert cardón cacti & agaves
+        const drawCactusBg = (x: number, y: number, size: number) => {
+          const cx = x - camX * 0.22; // cactus parallax
+          if (cx < -50 || cx > canvas.width + 50) return;
+
+          ctx.fillStyle = '#15803d'; // green-700
+          // Trunk
+          ctx.fillRect(cx - 3, y - size, 6, size);
+          // Left arm
+          ctx.fillRect(cx - 10, y - size + 10, 8, 3);
+          ctx.fillRect(cx - 10, y - size + 2, 3, 10);
+          // Right arm
+          ctx.fillRect(cx, y - size + 16, 11, 3);
+          ctx.fillRect(cx + 9, y - size + 6, 3, 11);
+        };
+
+        const drawAgaveBg = (x: number, y: number) => {
+          const ax = x - camX * 0.22;
+          if (ax < -40 || ax > canvas.width + 40) return;
+
+          ctx.fillStyle = '#166534'; // darker agave
+          ctx.beginPath();
+          ctx.moveTo(ax - 10, y);
+          ctx.lineTo(ax, y - 12);
+          ctx.lineTo(ax + 10, y);
+          ctx.lineTo(ax - 6, y);
+          ctx.lineTo(ax - 12, y - 6);
+          ctx.lineTo(ax + 12, y - 6);
+          ctx.closePath();
+          ctx.fill();
+        };
+
+        // Scatter background plants in right desert zone (1600 to 2400)
+        const desertPlants = [
+          { x: 1620, type: 'agave' },
+          { x: 1710, type: 'cactus', h: 32 },
+          { x: 1840, type: 'agave' },
+          { x: 1950, type: 'cactus', h: 26 },
+          { x: 2060, type: 'agave' },
+          { x: 2180, type: 'cactus', h: 36 },
+          { x: 2320, type: 'agave' }
+        ];
+        desertPlants.forEach(p => {
+          if (p.type === 'cactus') {
+            drawCactusBg(p.x, 390, p.h!);
+          } else {
+            drawAgaveBg(p.x, 390);
+          }
+        });
+
+        // Bottom grass margin boundary to ground them
+        ctx.fillStyle = '#22c55e'; // green-500
+        ctx.fillRect(0, 390, canvas.width, 3);
+      }
 
     } else if (theme === 'cave') {
       // Cascada Cola de Caballo theme (Waterfalls and pine sierra heights)
@@ -4315,56 +4416,116 @@ export default function GameCanvas({
         );
       }
     } else if (s.playerType === 'mario') {
-      // Draw pixel-accurate Super Mario World hand-crafted 16-bit SNES animations!
-      let activeMatrix = MARIO_SPRITES.idle;
-      const palette = s.pPowerUp === 'fire' ? MARIO_PALETTES.fire : MARIO_PALETTES.mario;
+      if (marioFileLoaded && marioSpriteImgRef.current) {
+        // Render custom PNG Mario image
+        const img = marioSpriteImgRef.current;
+        const isSheet = img.width > img.height * 1.5;
 
-      if (!s.pOnGround) {
-        // Airborne jump & fall dynamics
-        activeMatrix = s.pvy > 0 ? MARIO_SPRITES.fall : MARIO_SPRITES.jump;
-      } else if (s.pAnimState === 'duck') {
-        activeMatrix = MARIO_SPRITES.duck;
-      } else if (s.pAnimState === 'walk' || Math.abs(s.pvx) > 0.1) {
-        // Detect opposite tap skid (retro friction slide)
-        const isBraking = (facing === 'left' && s.pvx > 0.6) || (facing === 'right' && s.pvx < -0.6);
-        if (isBraking) {
-          activeMatrix = MARIO_SPRITES.skid;
-        } else if (Math.abs(s.pvx) > 4.5) {
-          activeMatrix = MARIO_SPRITES.run1;
-        } else {
-          // Walk cycle sequence (walk1, walk2, walk3)
-          const walkFrame = Math.floor(s.pWalkTick / 5) % 3;
-          activeMatrix = walkFrame === 0 ? MARIO_SPRITES.walk1 : (walkFrame === 1 ? MARIO_SPRITES.walk2 : MARIO_SPRITES.walk3);
+        ctx.save();
+        if (facing === 'left') {
+          // Flip horizontally
+          ctx.translate(px + pw / 2, 0);
+          ctx.scale(-1, 1);
+          ctx.translate(-(px + pw / 2), 0);
         }
+
+        if (isSheet) {
+          // Dynamic horizontal frames (typically 6 frames or 8 frames)
+          let frameIdx = 0; // idle
+          if (!s.pOnGround) {
+            frameIdx = s.pvy > 0 ? 5 : 4; // jump / fall
+          } else if (s.pAnimState === 'duck') {
+            frameIdx = 3; // duck
+          } else if (s.pAnimState === 'walk' || Math.abs(s.pvx) > 0.1) {
+            const isBraking = (facing === 'left' && s.pvx > 0.6) || (facing === 'right' && s.pvx < -0.6);
+            if (isBraking) {
+              frameIdx = 6; // skid
+            } else {
+              const walkFrame = Math.floor(s.pWalkTick / 5) % 3;
+              frameIdx = 1 + walkFrame; // walk1, walk2, walk3
+            }
+          }
+
+          const totalFrames = Math.max(1, Math.floor(img.width / img.height));
+          const safeFrameIdx = Math.min(frameIdx, totalFrames - 1);
+          const sWidth = img.width / totalFrames;
+          const sHeight = img.height;
+
+          // Align with player box
+          ctx.drawImage(
+            img,
+            safeFrameIdx * sWidth,
+            0,
+            sWidth,
+            sHeight,
+            px - (pw * 0.25),
+            py - 2 + bodyYOffset,
+            pw * 1.5,
+            ph + 2
+          );
+        } else {
+          // Draw standard single frame
+          ctx.drawImage(
+            img,
+            px - (pw * 0.25),
+            py - 2 + bodyYOffset,
+            pw * 1.5,
+            ph + 2
+          );
+        }
+        ctx.restore();
       } else {
-        activeMatrix = MARIO_SPRITES.idle;
-      }
+        // Draw pixel-accurate Super Mario World hand-crafted 16-bit SNES animations!
+        let activeMatrix = MARIO_SPRITES.idle;
+        const palette = s.pPowerUp === 'fire' ? MARIO_PALETTES.fire : MARIO_PALETTES.mario;
 
-      // Height and width scaling to align Mario perfectly with the gameplay box
-      const scale = 1.7; // beautiful retro pixel size scaling
-      const finalW = 16 * scale;
-      const finalH = 18 * scale;
-      const finalX = px - (finalW - pw) / 2;
-      // Offset vertically to anchor his shoes neatly on the tile edges
-      const finalY = py - (finalH - ph) + bodyYOffset;
+        if (!s.pOnGround) {
+          // Airborne jump & fall dynamics
+          activeMatrix = s.pvy > 0 ? MARIO_SPRITES.fall : MARIO_SPRITES.jump;
+        } else if (s.pAnimState === 'duck') {
+          activeMatrix = MARIO_SPRITES.duck;
+        } else if (s.pAnimState === 'walk' || Math.abs(s.pvx) > 0.1) {
+          // Detect opposite tap skid (retro friction slide)
+          const isBraking = (facing === 'left' && s.pvx > 0.6) || (facing === 'right' && s.pvx < -0.6);
+          if (isBraking) {
+            activeMatrix = MARIO_SPRITES.skid;
+          } else if (Math.abs(s.pvx) > 4.5) {
+            activeMatrix = MARIO_SPRITES.run1;
+          } else {
+            // Walk cycle sequence (walk1, walk2, walk3)
+            const walkFrame = Math.floor(s.pWalkTick / 5) % 3;
+            activeMatrix = walkFrame === 0 ? MARIO_SPRITES.walk1 : (walkFrame === 1 ? MARIO_SPRITES.walk2 : MARIO_SPRITES.walk3);
+          }
+        } else {
+          activeMatrix = MARIO_SPRITES.idle;
+        }
 
-      // Render custom pixel-art matrices onto Context2D on the fly
-      for (let r = 0; r < activeMatrix.length; r++) {
-        for (let c = 0; c < activeMatrix[r].length; c++) {
-          const colorIdx = activeMatrix[r][c];
-          if (colorIdx > 0 && colorIdx < palette.length) {
-            const pixelColor = palette[colorIdx];
-            ctx.fillStyle = pixelColor;
-            
-            // Flip columns horizontally if Mario is facing left
-            const colPos = facing === 'left' ? (activeMatrix[r].length - 1 - c) : c;
-            
-            ctx.fillRect(
-              Math.floor(finalX + colPos * scale),
-              Math.floor(finalY + r * scale),
-              Math.ceil(scale),
-              Math.ceil(scale)
-            );
+        // Height and width scaling to align Mario perfectly with the gameplay box
+        const scale = 1.7; // beautiful retro pixel size scaling
+        const finalW = 16 * scale;
+        const finalH = 18 * scale;
+        const finalX = px - (finalW - pw) / 2;
+        // Offset vertically to anchor his shoes neatly on the tile edges
+        const finalY = py - (finalH - ph) + bodyYOffset;
+
+        // Render custom pixel-art matrices onto Context2D on the fly
+        for (let r = 0; r < activeMatrix.length; r++) {
+          for (let c = 0; c < activeMatrix[r].length; c++) {
+            const colorIdx = activeMatrix[r][c];
+            if (colorIdx > 0 && colorIdx < palette.length) {
+              const pixelColor = palette[colorIdx];
+              ctx.fillStyle = pixelColor;
+              
+              // Flip columns horizontally if Mario is facing left
+              const colPos = facing === 'left' ? (activeMatrix[r].length - 1 - c) : c;
+              
+              ctx.fillRect(
+                Math.floor(finalX + colPos * scale),
+                Math.floor(finalY + r * scale),
+                Math.ceil(scale),
+                Math.ceil(scale)
+              );
+            }
           }
         }
       }
@@ -5920,6 +6081,42 @@ export default function GameCanvas({
           <span>C (Y): Bola de fuego (Fuego activo)</span>
           <span>D (X): Congelar enemigo (Hielo activo)</span>
         </div>
+      </div>
+
+      {/* Visual Asset Integration Monitor */}
+      <div className="w-full max-w-2xl bg-zinc-950/80 p-4 rounded-2xl border border-zinc-800 mt-3 text-zinc-400 font-mono text-[10px] flex flex-col gap-2">
+        <span className="font-bold text-zinc-300 flex items-center gap-2">
+          📁 INTEGRACIÓN DE TUS ARCHIVOS PNG:
+        </span>
+        <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between text-[11px] border-t border-zinc-900 pt-2 mt-1">
+          <div className="flex items-center gap-2.5">
+            <span className="text-zinc-500">Nivel 1 Fondo (fondo_nivel_1.png):</span>
+            {bgFileLoaded ? (
+              <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-extrabold border border-emerald-500/30 flex items-center gap-1 animate-pulse">
+                ● DETECTADO Y EN USO
+              </span>
+            ) : (
+              <span className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-500 font-bold border border-amber-500/20">
+                ○ VECTOR FALLBACK ACTIVO
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2.5">
+            <span className="text-zinc-500">Personaje Mario (mario.png):</span>
+            {marioFileLoaded ? (
+              <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-extrabold border border-emerald-500/30 flex items-center gap-1 animate-pulse">
+                ● DETECTADO Y EN USO
+              </span>
+            ) : (
+              <span className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-500 font-bold border border-amber-500/20">
+                ○ SPRITE MATRIX RETRO ACTIVO
+              </span>
+            )}
+          </div>
+        </div>
+        <p className="text-[9px] text-zinc-500 mt-1">
+          💡 <span className="text-zinc-400">¿Cómo usar tus archivos exactos?</span> Para que el juego los cargue, sube tus imágenes directamente al <span className="text-zinc-300 font-bold">explorador de archivos en el editor de código</span> con los nombres exactos: <code className="text-zinc-300 font-semibold bg-zinc-900 px-1 py-0.5 rounded">fondo_nivel_1.png</code> y <code className="text-zinc-200 font-semibold bg-zinc-900 px-1 py-0.5 rounded">mario.png</code> en la carpeta raíz del proyecto. El juego se actualizará y detectará los archivos de forma automática y transparente.
+        </p>
       </div>
     </div>
   );
