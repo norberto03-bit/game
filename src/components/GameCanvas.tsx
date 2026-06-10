@@ -75,6 +75,12 @@ export default function GameCanvas({
     jumpCount: 0,
     wasJumpKeyDown: false,
     
+    // Player Animations State Buffer and Input Queue
+    pAnimState: 'idle' as 'idle' | 'walk' | 'jump' | 'duck',
+    pAnimFrame: 0,
+    pWalkTick: 0,
+    pInputDirectionBuffer: [] as ('left' | 'right')[],
+    
     // PowerUp animation state
     isChangingPowerup: 0, // frame counter
     
@@ -106,6 +112,7 @@ export default function GameCanvas({
     lastCameraX: 100,
     lightningTimer: 0,
     texts: [] as FloatingText[],
+    landSquish: 0,
     
     // Trampas (traps) placed by SELECT
     trapsMax: 3,
@@ -178,6 +185,10 @@ export default function GameCanvas({
     s.py = 350;
     s.pvx = 0;
     s.pvy = 0;
+    s.pAnimState = 'idle';
+    s.pAnimFrame = 0;
+    s.pWalkTick = 0;
+    s.pInputDirectionBuffer = [];
     s.pPowerUp = stats.activePowerUp;
     s.levelFinished = false;
     s.finishTimer = 0;
@@ -586,6 +597,12 @@ export default function GameCanvas({
 
   // Game Loop Logic
   const gameLoopUpdate = (s: typeof stateRef.current) => {
+    const stoodOnGround = s.pOnGround;
+    if (s.landSquish > 0) {
+      s.landSquish *= 0.75;
+      if (s.landSquish < 0.01) s.landSquish = 0;
+    }
+
     // 0. Decrement shooting cooldowns if active
     if (s.fireCooldown > 0) s.fireCooldown--;
     if (s.iceCooldown > 0) s.iceCooldown--;
@@ -629,11 +646,36 @@ export default function GameCanvas({
       return; // Skip normal play processes
     }
 
-    // 3. Horizontal movement input acceleration
+    // 3. Horizontal movement input acceleration with state buffer input priority
     const isLeftPressed = s.keys['ArrowLeft'] || s.keys['a'] || s.keys['A'] || touchKeysRef.current['ArrowLeft'];
     const isRightPressed = s.keys['ArrowRight'] || s.keys['d'] || s.keys['D'] || s.keys['ArrowRight'] === true || touchKeysRef.current['ArrowRight'];
     // Read turbo button 'b' (Shift / button B)
     const isTurboPressed = s.keys['Shift'] || s.keys['b'] || s.keys['B'] || touchKeysRef.current['Shift'];
+
+    // Maintain input buffer history to prevent getting stuck on simultaneous touch/key actions
+    if (!s.pInputDirectionBuffer) s.pInputDirectionBuffer = [];
+    
+    if (isLeftPressed) {
+      if (!s.pInputDirectionBuffer.includes('left')) {
+        s.pInputDirectionBuffer.push('left');
+      }
+    } else {
+      s.pInputDirectionBuffer = s.pInputDirectionBuffer.filter((d: string) => d !== 'left');
+    }
+
+    if (isRightPressed) {
+      if (!s.pInputDirectionBuffer.includes('right')) {
+        s.pInputDirectionBuffer.push('right');
+      }
+    } else {
+      s.pInputDirectionBuffer = s.pInputDirectionBuffer.filter((d: string) => d !== 'right');
+    }
+
+    // Determine the prioritized active movement direction from the buffer (last elements represent newest inputs)
+    let activeDirection: 'left' | 'right' | null = null;
+    if (s.pInputDirectionBuffer.length > 0) {
+      activeDirection = s.pInputDirectionBuffer[s.pInputDirectionBuffer.length - 1] as 'left' | 'right';
+    }
 
     // Move speed limits depending on turbo active mode and player type
     let speedMultiplier = 1.0;
@@ -647,14 +689,14 @@ export default function GameCanvas({
       speedMultiplier = 0.95; // roosters are slightly slower but fly
     }
     
-    const maxWalkSpeed = (isTurboPressed ? 4.7 : 2.5) * speedMultiplier;
-    const acceleration = 0.22 * speedMultiplier;
-    const friction = s.playerType === 'truck' ? 0.94 : 0.85; // truck registers high momentum!
+    const maxWalkSpeed = (isTurboPressed ? 5.8 : 3.6) * speedMultiplier;
+    const acceleration = 0.58 * speedMultiplier;
+    const friction = s.playerType === 'truck' ? 0.85 : 0.72; // Snappier braking so player doesn't slide like on ice
 
-    if (isLeftPressed) {
+    if (activeDirection === 'left') {
       s.pvx -= acceleration;
       s.pFacing = 'left';
-    } else if (isRightPressed) {
+    } else if (activeDirection === 'right') {
       s.pvx += acceleration;
       s.pFacing = 'right';
     } else {
@@ -665,12 +707,36 @@ export default function GameCanvas({
     // Clamp speed limits
     s.pvx = Math.max(-maxWalkSpeed, Math.min(s.pvx, maxWalkSpeed));
 
+    // Determine priority-based animation state
+    // Priority order: 1. Jump (Airborne), 2. Duck (Crouch), 3. Walk, 4. Idle
+    const isCrouchPressed = s.keys['ArrowDown'] || s.keys['s'] || s.keys['S'] || touchKeysRef.current['ArrowDown'];
+    
+    if (!s.pOnGround) {
+      s.pAnimState = 'jump';
+    } else if (isCrouchPressed) {
+      s.pAnimState = 'duck';
+    } else if (activeDirection !== null || Math.abs(s.pvx) > 0.1) {
+      s.pAnimState = 'walk';
+    } else {
+      s.pAnimState = 'idle';
+    }
+
+    // Tick appropriate frame counts
+    s.pAnimFrame = (s.pAnimFrame || 0) + 1;
+    if (s.pAnimState === 'walk') {
+      s.pWalkTick = (s.pWalkTick || 0) + (isTurboPressed ? 1.6 : 1.0);
+    } else {
+      s.pWalkTick = 0;
+    }
+
     // 4. Vertical Jump parameters (A button / ArrowUp / Space / W)
     // REMOVED 'a' / 'A' keys to resolve fatal conflict with walking left
     const isJumpPressed = s.keys['ArrowUp'] || s.keys['Space'] || s.keys[' '] || s.keys['w'] || s.keys['W'] || touchKeysRef.current['ArrowUp'] || touchKeysRef.current['Space'];
-    const gravity = 0.5;
+    const gravity = 0.62;
 
     s.pvy += gravity;
+    // Advanced Physics Simulation: Terminal velocity/air resistance clamp (prevents high-fall tile tunneling and jerky drops)
+    if (s.pvy > 12.5) s.pvy = 12.5;
 
     // Hover flight for brocoliano!
     if (s.playerType === 'brocoliano' && !s.pOnGround && isJumpPressed && s.pvy > 0) {
@@ -698,8 +764,8 @@ export default function GameCanvas({
     const wasJumpKeyDown = s.wasJumpKeyDown || false;
     if (isJumpPressed && !wasJumpKeyDown) {
       if (s.pOnGround) {
-        // First jump
-        s.pvy = isTurboPressed ? -11 : -9.5;
+        // First jump - tuned for snappier rise/fall with upgraded gravity
+        s.pvy = isTurboPressed ? -12.5 : -10.8;
         s.pOnGround = false;
         audio.playJump();
         
@@ -718,7 +784,7 @@ export default function GameCanvas({
         }
       } else if (s.playerType === 'glasses' && s.jumpCount === 0) {
         // Perform double-jump mid-air!
-        s.pvy = -9.0;
+        s.pvy = -10.2;
         s.jumpCount = 1;
         audio.playJump();
 
@@ -789,11 +855,12 @@ export default function GameCanvas({
       const bx = b.x * tileSize;
       const by = b.y * tileSize;
 
+      // Vertical clearance: skip horizontal collisions if player is entirely above or below the block
+      if (s.py + s.pHeight <= by + 1.5 || s.py >= by + tileSize - 1.5) return;
+
       if (
         s.px < bx + tileSize &&
-        s.px + s.pWidth > bx &&
-        s.py < by + tileSize &&
-        s.py + s.pHeight > by
+        s.px + s.pWidth > bx
       ) {
         const oL = s.px + s.pWidth - bx;
         const oR = bx + tileSize - s.px;
@@ -854,24 +921,26 @@ export default function GameCanvas({
           return;
         }
 
-        // Calculate overlap depths to resolve collision
-        const oL = playerBox.x + playerBox.width - bx;
-        const oR = bx + tileSize - playerBox.x;
+        // Horizontal clearance: skip physical vertical resolution if they are not actually above/below
+        if (playerBox.x + playerBox.width <= bx + 1.5 || playerBox.x >= bx + tileSize - 1.5) {
+          return;
+        }
+
         const oT = playerBox.y + playerBox.height - by;
         const oB = by + tileSize - playerBox.y;
 
-        const minOverlap = Math.min(oL, oR, oT, oB);
-
-        if (minOverlap === oT && s.pvy >= 0) {
+        if (oT < oB) {
           // Land on top
-          s.py -= oT;
-          s.pvy = 0;
-          s.pOnGround = true;
-          
-          if (b.type === 'spike') {
-            triggerPlayerDamage();
+          if (s.pvy >= 0) {
+            s.py -= oT;
+            s.pvy = 0;
+            s.pOnGround = true;
+            
+            if (b.type === 'spike') {
+              triggerPlayerDamage();
+            }
           }
-        } else if (minOverlap === oB) {
+        } else {
           // Hit head from below!
           s.py += oB;
           s.pvy = 0;
@@ -984,34 +1053,13 @@ export default function GameCanvas({
               });
             }
           }
-        } else if (minOverlap === oL) {
-          // Hit from left side
-          if (b.type === 'liftable' && isTurboPressed) {
-            // LIFT up block (Very neat SMW mechanic!)
-            s.blocks = s.blocks.filter((item) => item.id !== b.id);
-            s.pPowerUp = 'turbo'; // temporary holding visual
-            s.texts.push({ id: Math.random().toString(), text: '¡Bloque Levantado!', x: bx, y: by - 10, life: 1.0 });
-            audio.playPowerUp();
-          } else {
-            s.px -= oL;
-            s.pvx = 0;
-            if (b.type === 'spike') triggerPlayerDamage();
-          }
-        } else if (minOverlap === oR) {
-          // Hit from right side
-          if (b.type === 'liftable' && isTurboPressed) {
-            s.blocks = s.blocks.filter((item) => item.id !== b.id);
-            s.pPowerUp = 'turbo';
-            s.texts.push({ id: Math.random().toString(), text: '¡Bloque Levantado!', x: bx, y: by - 10, life: 1.0 });
-            audio.playPowerUp();
-          } else {
-            s.px += oR;
-            s.pvx = 0;
-            if (b.type === 'spike') triggerPlayerDamage();
-          }
         }
       }
     });
+
+    if (s.pOnGround && !stoodOnGround) {
+      s.landSquish = 0.28;
+    }
 
     // Continuous running & sliding dust/mud trails (Improvement #5 & #8)
     if (s.pOnGround && Math.abs(s.pvx) > 0.8 && Math.random() < 0.28) {
@@ -1887,6 +1935,30 @@ export default function GameCanvas({
         }
       }
     }
+
+    // Advanced Physics Simulation: Player Kinetic Wind Draft Interaction
+    // The player's movement exerts a force field that affects weather and ambient particles around them!
+    const playerMidX = s.px + s.pWidth / 2 - s.cameraX;
+    const playerMidY = s.py + s.pHeight / 2;
+    const interactRadius = 65;
+    const dragFactor = 0.09;
+
+    s.weatherParticles.forEach((p) => {
+      const dx = p.x - playerMidX;
+      const dy = p.y - playerMidY;
+      const distSq = dx * dx + dy * dy;
+      if (distSq < interactRadius * interactRadius && distSq > 0.1) {
+        const dist = Math.sqrt(distSq);
+        const strength = (interactRadius - dist) / interactRadius; // closer = stronger influence
+        // Push particles outwards from player's core combined with the player's kinetic drift trail
+        p.vx += s.pvx * strength * dragFactor + (dx / dist) * strength * 0.45;
+        p.vy += s.pvy * strength * dragFactor + (dy / dist) * strength * 0.25;
+
+        // Velocity damping to keep physical motions organic and within stable bounds
+        p.vx = Math.max(-8, Math.min(8, p.vx));
+        p.vy = Math.max(-12, Math.min(15, p.vy));
+      }
+    });
 
     // Update existing weather particles positions
     s.weatherParticles.forEach((p) => {
@@ -2944,6 +3016,39 @@ export default function GameCanvas({
     const ph = s.pHeight;
     const facing = s.pFacing;
 
+    // Procedural animation state calculations based on prioritized buffer states
+    let headYOffset = 0;
+    let bodyYOffset = 0;
+    let bodyXOffset = 0;
+    let bodyHeightDiff = 0;
+    let leftFootOffset = 0;
+    let rightFootOffset = 0;
+    let rumbleY = 0;
+
+    const animState = s.pAnimState || 'idle';
+    const animFrame = s.pAnimFrame || 0;
+    const walkTick = s.pWalkTick || 0;
+
+    if (animState === 'idle') {
+      headYOffset = Math.sin(animFrame * 0.05) * 0.5;
+      bodyYOffset = Math.sin(animFrame * 0.05) * 0.25;
+      rumbleY = Math.sin(Date.now() * 0.07) * 0.5;
+    } else if (animState === 'walk') {
+      // Bobbing walking speed cycle
+      headYOffset = Math.abs(Math.sin(walkTick * 0.15)) * -1.5;
+      bodyYOffset = Math.abs(Math.sin(walkTick * 0.15)) * -0.5;
+      bodyXOffset = Math.sin(walkTick * 0.15) * 0.8;
+      leftFootOffset = Math.sin(walkTick * 0.15) * 2;
+      rightFootOffset = -Math.sin(walkTick * 0.15) * 2;
+    } else if (animState === 'jump') {
+      headYOffset = -1.5;
+      bodyYOffset = -0.5;
+    } else if (animState === 'duck') {
+      headYOffset = 4.0;
+      bodyYOffset = 2.5;
+      bodyHeightDiff = -3.0;
+    }
+
     // PowerUp style modifications if not transformed completely (or overlay neon glow)
     let powerGlow = 'transparent';
     if (s.pPowerUp === 'fire') powerGlow = 'rgba(231, 76, 60, 0.45)';
@@ -2959,53 +3064,82 @@ export default function GameCanvas({
 
     ctx.save();
 
+    // Physics FX: Squash and Stretch calculation based on velocity and landing impact!
+    let scaleX = 1.0;
+    let scaleY = 1.0;
+    if (!s.pOnGround) {
+      // Stretch on jump/fall
+      const jumpStretch = Math.min(0.18, Math.abs(s.pvy) * 0.012);
+      scaleY += jumpStretch;
+      scaleX -= jumpStretch * 0.85;
+    } else if (s.landSquish && s.landSquish > 0) {
+      // Squish on land cushion
+      scaleY -= s.landSquish;
+      scaleX += s.landSquish * 1.2;
+    } else if (animState === 'duck') {
+      scaleY = 0.7;
+      scaleX = 1.3;
+    } else if (animState === 'walk') {
+      // Subtle organic bobbing while running
+      const bob = Math.sin(walkTick * 0.22) * 0.03;
+      scaleY += bob;
+      scaleX -= bob;
+    }
+
+    // Translate to center bottom pivot (feet on the ground) and apply physical scaling, then translate back
+    const centerX = px + pw / 2;
+    const bottomY = py + ph;
+    ctx.translate(centerX, bottomY);
+    ctx.scale(scaleX, scaleY);
+    ctx.translate(-centerX, -bottomY);
+
     // Render by player type!
     if (s.playerType === 'explorer') {
       // 1. Nómada de la Sierra (Majestic mountain traveler with a colorful wool Poncho, woven Morral satchel, and leather headband with falcon feather!)
       // Woven Morral Satchel on back
       ctx.fillStyle = '#8d6e63'; // woven brown wool
       const bpX = facing === 'right' ? px - 4 : px + pw - 2;
-      ctx.fillRect(bpX, py + 10, 6, 12);
+      ctx.fillRect(bpX + bodyXOffset, py + 10 + bodyYOffset, 6, 12 + bodyHeightDiff);
       ctx.fillStyle = '#4e342e'; // dark binding strap
-      ctx.fillRect(bpX + 1, py + 14, 4, 2);
+      ctx.fillRect(bpX + 1 + bodyXOffset, py + 14 + bodyYOffset, 4, 2);
 
       // Traditional Striped Poncho / Sarape de la Sierra
       ctx.fillStyle = '#c0392b'; // deep crimson wool base
-      ctx.fillRect(px + 1, py + 11, pw - 2, ph - 14);
+      ctx.fillRect(px + 1 + bodyXOffset, py + 11 + bodyYOffset, pw - 2, ph - 14 + bodyHeightDiff);
 
       // Sarape beautiful tribal/ethnic stripes (yellow and white horizontal threads)
       ctx.fillStyle = '#f1c40f'; // bright gold threads
-      ctx.fillRect(px + 1, py + 13, pw - 2, 2.5);
-      ctx.fillRect(px + 1, py + 21, pw - 2, 2.5);
+      ctx.fillRect(px + 1 + bodyXOffset, py + 13 + bodyYOffset, pw - 2, 2.5);
+      ctx.fillRect(px + 1 + bodyXOffset, py + 21 + bodyYOffset, pw - 2, 2.5);
 
       ctx.fillStyle = '#ffffff'; // white accent thread lines
-      ctx.fillRect(px + 1, py + 15, pw - 2, 1.5);
-      ctx.fillRect(px + 1, py + 19, pw - 2, 1.5);
+      ctx.fillRect(px + 1 + bodyXOffset, py + 15 + bodyYOffset, pw - 2, 1.5);
+      ctx.fillRect(px + 1 + bodyXOffset, py + 19 + bodyYOffset, pw - 2, 1.5);
 
       // Poncho bottom fringes (small diagonal threads)
       ctx.fillStyle = '#f39c12';
-      ctx.fillRect(px + 2, py + ph - 4, 3, 2);
-      ctx.fillRect(px + pw / 2 - 2, py + ph - 4, 3, 2);
-      ctx.fillRect(px + pw - 5, py + ph - 4, 3, 2);
+      ctx.fillRect(px + 2 + bodyXOffset, py + ph - 4 + bodyYOffset, 3, 2);
+      ctx.fillRect(px + pw / 2 - 2 + bodyXOffset, py + ph - 4 + bodyYOffset, 3, 2);
+      ctx.fillRect(px + pw - 5 + bodyXOffset, py + ph - 4 + bodyYOffset, 3, 2);
 
       // Head (suntanned mountain skin tone)
       ctx.fillStyle = '#e5a93b'; 
       ctx.beginPath();
-      ctx.arc(px + pw / 2, py + 5.5, 5.5, 0, Math.PI * 2);
+      ctx.arc(px + pw / 2, py + 5.5 + headYOffset, 5.5, 0, Math.PI * 2);
       ctx.fill();
 
       // Cinta Nómada de Cuero (Leather forehead headband)
       ctx.fillStyle = '#5c3a21'; // thick leather band
-      ctx.fillRect(px + pw / 2 - 5.5, py + 2, 11, 2.5);
+      ctx.fillRect(px + pw / 2 - 5.5, py + 2 + headYOffset, 11, 2.5);
 
       // Sacred Turquoise stone bead on headband center
       ctx.fillStyle = '#00fbff';
-      ctx.fillRect(px + pw / 2 + (facing === 'right' ? 2.5 : -4.5), py + 2, 2.5, 2.5);
+      ctx.fillRect(px + pw / 2 + (facing === 'right' ? 2.5 : -4.5), py + 2 + headYOffset, 2.5, 2.5);
 
       // Pluma de Halcón de la Sierra (Sacred mountain falcon feather pointing up diagonally)
       ctx.fillStyle = '#ffffff'; // white quill and plume base
       ctx.save();
-      ctx.translate(px + pw / 2 - (facing === 'right' ? 3.5 : -2.5), py + 1.5);
+      ctx.translate(px + pw / 2 - (facing === 'right' ? 3.5 : -2.5), py + 1.5 + headYOffset);
       ctx.rotate(facing === 'right' ? -Math.PI / 4 : Math.PI / 4);
       // Main feather blade
       ctx.fillRect(-2, -7, 3, 7);
@@ -3016,54 +3150,54 @@ export default function GameCanvas({
       // Eye
       ctx.fillStyle = '#000000';
       const eyeOffset = facing === 'right' ? 2 : -2;
-      ctx.fillRect(px + pw / 2 + eyeOffset, py + 4.5, 2, 2);
+      ctx.fillRect(px + pw / 2 + eyeOffset, py + 4.5 + headYOffset, 2, 2);
 
       // Suede travel boots with laces
       ctx.fillStyle = '#4e342e';
-      ctx.fillRect(px, py + ph - 3, 5, 3.5);
-      ctx.fillRect(px + pw - 5, py + ph - 3, 5, 3.5);
+      ctx.fillRect(px, py + ph - 3 + (leftFootOffset > 0 ? -leftFootOffset : 0), 5, 3.5 + (leftFootOffset > 0 ? leftFootOffset : 0));
+      ctx.fillRect(px + pw - 5, py + ph - 3 + (rightFootOffset > 0 ? -rightFootOffset : 0), 5, 3.5 + (rightFootOffset > 0 ? rightFootOffset : 0));
 
     } else if (s.playerType === 'glasses') {
       // 2. Lentes (Violet hipster hoodie, dark sunglasses, double-jump)
       // Hoodie
       ctx.fillStyle = '#8e44ad'; // Hipster violet
-      ctx.fillRect(px + 1, py + 11, pw - 2, ph - 13);
+      ctx.fillRect(px + 1 + bodyXOffset, py + 11 + bodyYOffset, pw - 2, ph - 13 + bodyHeightDiff);
       // Hoodie cap hood fold
       ctx.fillStyle = '#6c0892';
-      ctx.fillRect(px + (facing === 'right' ? 0 : pw - 4), py + 11, 4, 8);
+      ctx.fillRect(px + (facing === 'right' ? 0 : pw - 4) + bodyXOffset, py + 11 + bodyYOffset, 4, 8 + bodyHeightDiff / 2);
 
       // Face
       ctx.fillStyle = '#ffeaa7';
       ctx.beginPath();
-      ctx.arc(px + pw / 2, py + 6, 6.5, 0, Math.PI * 2);
+      ctx.arc(px + pw / 2, py + 6 + headYOffset, 6.5, 0, Math.PI * 2);
       ctx.fill();
 
       // Giant COOL pixelated black sunglasses! (Sr. Lentes)
       ctx.fillStyle = '#000000';
       const glFace = facing === 'right' ? 2.5 : -2.5;
-      ctx.fillRect(px + pw / 2 + glFace - 4, py + 4.5, 7, 3); // frame
+      ctx.fillRect(px + pw / 2 + glFace - 4, py + 4.5 + headYOffset, 7, 3); // frame
       ctx.fillStyle = '#ffffff'; // white diagonal reflection glass glare
-      ctx.fillRect(px + pw / 2 + glFace - 3, py + 4.5, 1, 1.5);
+      ctx.fillRect(px + pw / 2 + glFace - 3, py + 4.5 + headYOffset, 1, 1.5);
 
       // Shoes
       ctx.fillStyle = '#2c3e50';
-      ctx.fillRect(px, py + ph - 3, 5, 4);
-      ctx.fillRect(px + pw - 5, py + ph - 3, 5, 4);
+      ctx.fillRect(px, py + ph - 3 + (leftFootOffset > 0 ? -leftFootOffset : 0), 5, 4 + (leftFootOffset > 0 ? leftFootOffset : 0));
+      ctx.fillRect(px + pw - 5, py + ph - 3 + (rightFootOffset > 0 ? -rightFootOffset : 0), 5, 4 + (rightFootOffset > 0 ? rightFootOffset : 0));
 
     } else if (s.playerType === 'truck') {
       // 3. Monster Truck! Red cabin, large rolling wheels
       // Cabin red frame
       ctx.fillStyle = '#e74c3c'; // Fire red
-      ctx.fillRect(px, py + 1, pw, ph - 9);
+      ctx.fillRect(px, py + 1 + rumbleY, pw, ph - 9);
       // Windshield
       ctx.fillStyle = '#e0f7fa';
       const wsX = facing === 'right' ? px + pw - 10 : px + 2;
-      ctx.fillRect(wsX, py + 3, 8, 6);
+      ctx.fillRect(wsX, py + 3 + rumbleY, 8, 6);
 
       // Exhaust pipe soot puffs
       ctx.fillStyle = '#7f8c8d';
       const exhX = facing === 'right' ? px + 2 : px + pw - 5;
-      ctx.fillRect(exhX, py - 4, 3, 6);
+      ctx.fillRect(exhX, py - 4 + rumbleY, 3, 6);
       if (Math.random() < 0.15) {
         s.particles.push({
           id: Math.random().toString(),
@@ -3080,12 +3214,12 @@ export default function GameCanvas({
       // Yellow neon headlights
       ctx.fillStyle = '#f1c40f';
       const litX = facing === 'right' ? px + pw - 2 : px;
-      ctx.fillRect(litX, py + 9, 2, 3);
+      ctx.fillRect(litX, py + 9 + rumbleY, 2, 3);
 
       // Wheels suspensions
       ctx.fillStyle = '#2c3e50';
-      ctx.fillRect(px + 2, py + ph - 9, 4, 4);
-      ctx.fillRect(px + pw - 6, py + ph - 9, 4, 4);
+      ctx.fillRect(px + 2, py + ph - 9 + rumbleY / 2, 4, 4);
+      ctx.fillRect(px + pw - 6, py + ph - 9 + rumbleY / 2, 4, 4);
 
       // Two BIG black rubber rolling wheels!
       const wAngle = (s.px * 0.08) % (Math.PI * 2); // spin proportional to walk!
@@ -3124,26 +3258,26 @@ export default function GameCanvas({
     } else if (s.playerType === 'bike') {
       // 4. Blue Motorcycle!
       ctx.fillStyle = '#2980b9'; // Speed blue
-      ctx.fillRect(px, py + 3, pw, ph - 9);
+      ctx.fillRect(px, py + 3 + rumbleY, pw, ph - 9);
       
       // Handlebars and seat
       ctx.fillStyle = '#34495e';
-      ctx.fillRect(px + 4, py + 1, pw - 8, 2);
+      ctx.fillRect(px + 4, py + 1 + rumbleY, pw - 8, 2);
 
       // Rider helmet
       ctx.fillStyle = '#ecf0f1';
       ctx.beginPath();
-      ctx.arc(px + pw / 2, py + 1, 5, 0, Math.PI * 2);
+      ctx.arc(px + pw / 2, py + 1 + rumbleY, 5, 0, Math.PI * 2);
       ctx.fill();
       // Black visor
       ctx.fillStyle = '#000000';
       const visX = facing === 'right' ? px + pw / 2 + 1 : px + pw / 2 - 4;
-      ctx.fillRect(visX, py - 1, 3, 2);
+      ctx.fillRect(visX, py - 1 + rumbleY, 3, 2);
 
       // Light glow
       ctx.fillStyle = '#fef08a';
       const blitX = facing === 'right' ? px + pw - 1 : px;
-      ctx.fillRect(blitX, py + 5, 2, 3);
+      ctx.fillRect(blitX, py + 5 + rumbleY, 2, 3);
 
       // Front & Rear bike wheels
       const bAngle = (s.px * 0.1) % (Math.PI * 2);
@@ -3173,20 +3307,20 @@ export default function GameCanvas({
     } else if (s.playerType === 'catquad') {
       // 5. CatQuad (white cat ears atop yellow quad ATV!)
       ctx.fillStyle = '#f1c40f'; // Gold chassis
-      ctx.fillRect(px, py + 7, pw, ph - 13);
+      ctx.fillRect(px, py + 7 + rumbleY, pw, ph - 13);
 
       // Kitty ears
       ctx.fillStyle = '#ffffff';
       ctx.beginPath();
-      ctx.moveTo(px + 2, py + 7);
-      ctx.lineTo(px + 6, py + 1.5);
-      ctx.lineTo(px + 8, py + 7);
+      ctx.moveTo(px + 2, py + 7 + rumbleY);
+      ctx.lineTo(px + 6, py + 1.5 + rumbleY);
+      ctx.lineTo(px + 8, py + 7 + rumbleY);
       ctx.fill();
 
       ctx.beginPath();
-      ctx.moveTo(px + pw - 8, py + 7);
-      ctx.lineTo(px + pw - 6, py + 1.5);
-      ctx.lineTo(px + pw - 2, py + 7);
+      ctx.moveTo(px + pw - 8, py + 7 + rumbleY);
+      ctx.lineTo(px + pw - 6, py + 1.5 + rumbleY);
+      ctx.lineTo(px + pw - 2, py + 7 + rumbleY);
       ctx.fill();
 
       // Whiskers
@@ -3194,10 +3328,10 @@ export default function GameCanvas({
       ctx.lineWidth = 1;
       const wDir = facing === 'right' ? 1 : -1;
       ctx.beginPath();
-      ctx.moveTo(px + pw / 2, py + 8);
-      ctx.lineTo(px + pw / 2 + 9 * wDir, py + 6);
-      ctx.moveTo(px + pw / 2, py + 9);
-      ctx.lineTo(px + pw / 2 + 9 * wDir, py + 9);
+      ctx.moveTo(px + pw / 2, py + 8 + rumbleY);
+      ctx.lineTo(px + pw / 2 + 9 * wDir, py + 6 + rumbleY);
+      ctx.moveTo(px + pw / 2, py + 9 + rumbleY);
+      ctx.lineTo(px + pw / 2 + 9 * wDir, py + 9 + rumbleY);
       ctx.stroke();
 
       // ATV rolling wheels
@@ -3222,45 +3356,44 @@ export default function GameCanvas({
     } else if (s.playerType === 'brocoliano') {
       // 6. Gallo Brocoliano (Broccoli crown head/body + wings flight!)
       ctx.fillStyle = '#2ecc71'; // Broccoli rich green
-      ctx.fillRect(px + 1, py + 9, pw - 2, ph - 12);
+      ctx.fillRect(px + 1 + bodyXOffset, py + 9 + bodyYOffset, pw - 2, ph - 12 + bodyHeightDiff);
       
       // Fluffy broccoli nodes structure
       ctx.fillStyle = '#27ae60';
       ctx.beginPath();
-      ctx.arc(px + pw / 2, py + 9, 4, 0, Math.PI * 2);
-      ctx.arc(px + pw / 2 - 4 , py + 13, 3.5, 0, Math.PI * 2);
-      ctx.arc(px + pw / 2 + 4 , py + 13, 3.5, 0, Math.PI * 2);
+      ctx.arc(px + pw / 2 + bodyXOffset, py + 9 + bodyYOffset, 4, 0, Math.PI * 2);
+      ctx.arc(px + pw / 2 - 4 + bodyXOffset, py + 13 + bodyYOffset, 3.5, 0, Math.PI * 2);
+      ctx.arc(px + pw / 2 + 4 + bodyXOffset, py + 13 + bodyYOffset, 3.5, 0, Math.PI * 2);
       ctx.fill();
 
       // Rooster Cream Face
       ctx.fillStyle = '#fef08a'; // pale yellow
       ctx.beginPath();
-      ctx.arc(px + pw / 2, py + 5, 6, 0, Math.PI * 2);
+      ctx.arc(px + pw / 2 + bodyXOffset, py + 5 + headYOffset, 6, 0, Math.PI * 2);
       ctx.fill();
 
       // Crest
       ctx.fillStyle = '#ef4444'; // Fire crest
       ctx.beginPath();
-      ctx.arc(px + pw / 2 - 2, py - 1, 2.5, 0, Math.PI * 2);
-      ctx.arc(px + pw / 2 + 2, py - 1, 2.5, 0, Math.PI * 2);
+      ctx.arc(px + pw / 2 - 2 + bodyXOffset, py - 1 + headYOffset, 2.5, 0, Math.PI * 2);
+      ctx.arc(px + pw / 2 + 2 + bodyXOffset, py - 1 + headYOffset, 2.5, 0, Math.PI * 2);
       ctx.fill();
 
       // Peak beak
       ctx.fillStyle = '#f39c12';
       const beakDir = facing === 'right' ? 1.5 : -1.5;
       ctx.beginPath();
-      ctx.moveTo(px + pw / 2, py + 4);
-      ctx.lineTo(px + pw / 2 + 6 * beakDir, py + 6.5);
-      ctx.lineTo(px + pw / 2, py + 8);
+      ctx.moveTo(px + pw / 2 + bodyXOffset, py + 4 + headYOffset);
+      ctx.lineTo(px + pw / 2 + (6 + bodyXOffset) * beakDir, py + 6.5 + headYOffset);
+      ctx.lineTo(px + pw / 2 + bodyXOffset, py + 8 + headYOffset);
       ctx.fill();
 
       // Flapping wing!
       ctx.fillStyle = '#2ecc71';
       ctx.save();
-      const wingPivotX = facing === 'right' ? px : px + pw;
-      ctx.translate(wingPivotX, py + 14);
+      const wingPivotX = facing === 'right' ? px + bodyXOffset : px + pw + bodyXOffset;
+      ctx.translate(wingPivotX, py + 14 + bodyYOffset);
       
-      // REMOVED 'a' / 'A' keys to resolve fatal conflict with walking left
       const isHovering = s.keys['ArrowUp'] || s.keys['Space'] || s.keys[' '] || s.keys['w'] || s.keys['W'];
       const flapAngle = (!s.pOnGround && isHovering)
         ? Math.sin(Date.now() * 0.04) * 0.95 
@@ -3274,8 +3407,8 @@ export default function GameCanvas({
 
       // Feet
       ctx.fillStyle = '#ea580c';
-      ctx.fillRect(px + 3, py + ph - 3, 3, 3);
-      ctx.fillRect(px + pw - 6, py + ph - 3, 3, 3);
+      ctx.fillRect(px + 3, py + ph - 3 + (leftFootOffset > 0 ? -leftFootOffset : 0), 3, 3 + (leftFootOffset > 0 ? leftFootOffset : 0));
+      ctx.fillRect(px + pw - 6, py + ph - 3 + (rightFootOffset > 0 ? -rightFootOffset : 0), 3, 3 + (rightFootOffset > 0 ? rightFootOffset : 0));
     }
 
     ctx.restore();
