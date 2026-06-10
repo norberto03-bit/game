@@ -14,16 +14,17 @@ jobs:
     - name: 🚚 Get latest code
       uses: actions/checkout@v4
 
-    - name: ⚙️ Use Node.js 18.x
+    - name: ⚙️ Use Node.js 20.x
       uses: actions/setup-node@v4
       with:
-        node-version: 18
+        node-version: 20
 
-    - name: 📦 Install dependencies
+    - name: 📦 Update npm & Install dependencies
       run: |
+        npm install -g npm@latest
         rm -f package-lock.json
         rm -rf node_modules
-        npm install
+        npm install --include=optional
 
     - name: 🏗️ Build static production files
       run: npm run build
@@ -36,7 +37,7 @@ jobs:
         password: ${{ secrets.FTP_PASSWORD }}
         # The build output is compiled inside the 'dist' directory
         local-dir: ./dist/
-        # Optional: Set this if you want to deploy to a specific subdirectory on your hosting
-        # server-dir: /public_html/
+        # The target subdirectory on your FTP server (using your newly added FTP_SERVER_DIR secret)
+        server-dir: ${{ secrets.FTP_SERVER_DIR }}
         # Set to true if you want to delete any existing files on the FTP server that aren't in dist/
         dangerous-clean-cut: false
