@@ -20,7 +20,10 @@ jobs:
         node-version: 18
 
     - name: 📦 Install dependencies
-      run: npm install
+      run: |
+        rm -f package-lock.json
+        rm -rf node_modules
+        npm install
 
     - name: 🏗️ Build static production files
       run: npm run build
