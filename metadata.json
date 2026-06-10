@@ -1,0 +1,6 @@
+{
+  "name": "Nómada Quest - Edición Game Boy",
+  "description": "Un videojuego de plataformas de control táctil premium en formato consola portátil Game Boy, con habilidades de fuego, hielo, selector de trampas, mapa interactivo de nivel y música retro procedural sintetizada.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

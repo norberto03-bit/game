@@ -1,0 +1,83 @@
+@import "tailwindcss";
+
+@theme {
+  --color-snes-sky: #5c94fc;
+  --color-snes-orange: #d85000;
+  --color-snes-sand: #f8d8a0;
+  --color-snes-yellow: #f8b800;
+}
+
+@utility retro-shadow {
+  text-shadow: 3px 3px 0px #000000;
+}
+
+@utility retro-shadow-lg {
+  text-shadow: 4px 4px 0px #000000;
+}
+
+@utility retro-box-shadow {
+  box-shadow: 10px 10px 0px rgba(0, 0, 0, 0.35);
+}
+
+@utility retro-node-shadow {
+  box-shadow: 4px 4px 0px #000000;
+}
+
+/* --- Real Handheld Game Boy Console Aesthetics --- */
+
+/* Classic DMG-01 grey plastic chassis style with realistic 3D shadow and texture */
+@utility gameboy-chassis {
+  background-color: #c5c6bc;
+  background-image: radial-gradient(rgba(255,255,255,0.15) 1px, transparent 0),
+                    radial-gradient(rgba(0,0,0,0.05) 1px, transparent 0);
+  background-size: 8px 8px;
+  background-position: 0 0, 4px 4px;
+  box-shadow: 
+    0 25px 50px -12px rgba(0, 0, 0, 0.8),
+    inset 0 3px 0px rgba(255, 255, 255, 0.7),
+    inset 0 -5px 0px rgba(0, 0, 0, 0.35);
+}
+
+/* Glass protection bezel screen border with classic purple-blue stripes */
+@utility gameboy-bezel {
+  background: #737780;
+  box-shadow: 
+    inset 0 3px 8px rgba(0,0,0,0.6),
+    0 2px 2px rgba(255,255,255,0.4);
+}
+
+/* Scanline / Grid effect to simulate classic high-contrast CRT/LCD screen matrix */
+@utility gameboy-screen-scanline {
+  background: linear-gradient(
+    rgba(18, 16, 16, 0) 50%, 
+    rgba(0, 0, 0, 0.12) 50%
+  ), linear-gradient(
+    90deg, 
+    rgba(255, 0, 0, 0.03), 
+    rgba(0, 255, 0, 0.01), 
+    rgba(0, 0, 255, 0.03)
+  );
+  background-size: 100% 4px, 6px 100%;
+}
+
+/* Tactile 3D button rendering with deep active compression */
+@utility gameboy-btn-tactile {
+  box-shadow: 
+    0 4px 0px #6d1b26,
+    inset 0 2px 2px rgba(255,255,255,0.4);
+}
+
+@utility gameboy-btn-tactile-active {
+  transform: translateY(3px) scale(0.92);
+  box-shadow: 
+    0 1px 0px #4d1018,
+    inset 0 2px 4px rgba(0,0,0,0.7);
+}
+
+/* D-Pad cross styling with satisfying plastic grooves and pivot point */
+@utility gameboy-dpad-center {
+  background: #25282a;
+  box-shadow: 
+    inset 0 1px 1px rgba(255,255,255,0.2),
+    0 4px 0px #111213;
+}
