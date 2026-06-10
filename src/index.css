@@ -74,6 +74,61 @@
     inset 0 2px 4px rgba(0,0,0,0.7);
 }
 
+/* Custom Super Nintendo 16-Bit Super Console aesthetics */
+@utility snes-chassis {
+  background-color: #d9dbda;
+  background-image: linear-gradient(180deg, #e3e5e4 0%, #cfd1d0 100%);
+  box-shadow: 
+    0 30px 60px -15px rgba(0, 0, 0, 0.9),
+    inset 0 4px 0px rgba(255, 255, 255, 0.95),
+    inset 0 -6px 0px rgba(0, 0, 0, 0.4),
+    0 10px 20px rgba(0,0,0,0.3);
+}
+
+@utility snes-bezel {
+  background: #505255;
+  background-image: linear-gradient(135deg, #5c5e61 0%, #444648 100%);
+  box-shadow: 
+    inset 0 4px 12px rgba(0,0,0,0.85),
+    0 2px 3px rgba(255,255,255,0.3);
+}
+
+@utility snes-btn-green {
+  background-color: #10ac84;
+  box-shadow: 0 4px 0px #0b7a5d, inset 0 2px 2px rgba(255,255,255,0.45);
+}
+@utility snes-btn-green-active {
+  transform: translateY(3px) scale(0.92);
+  box-shadow: 0 1px 0px #064a38, inset 0 2px 4px rgba(0,0,0,0.7);
+}
+
+@utility snes-btn-blue {
+  background-color: #2980b9;
+  box-shadow: 0 4px 0px #1c5a85, inset 0 2px 2px rgba(255,255,255,0.45);
+}
+@utility snes-btn-blue-active {
+  transform: translateY(3px) scale(0.92);
+  box-shadow: 0 1px 0px #123d5a, inset 0 2px 4px rgba(0,0,0,0.7);
+}
+
+@utility snes-btn-red {
+  background-color: #c0392b;
+  box-shadow: 0 4px 0px #8a251a, inset 0 2px 2px rgba(255,255,255,0.45);
+}
+@utility snes-btn-red-active {
+  transform: translateY(3px) scale(0.92);
+  box-shadow: 0 1px 0px #5c1810, inset 0 2px 4px rgba(0,0,0,0.7);
+}
+
+@utility snes-btn-yellow {
+  background-color: #f1c40f;
+  box-shadow: 0 4px 0px #c29d0b, inset 0 2px 2px rgba(255,255,255,0.45);
+}
+@utility snes-btn-yellow-active {
+  transform: translateY(3px) scale(0.92);
+  box-shadow: 0 1px 0px #8e7305, inset 0 2px 4px rgba(0,0,0,0.7);
+}
+
 /* D-Pad cross styling with satisfying plastic grooves and pivot point */
 @utility gameboy-dpad-center {
   background: #25282a;

@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Block, Enemy, Projectile, GameParticle, FloatingText, PowerUpType, PlayerStats } from '../types';
 import { audio } from '../audio';
 import { Pause, Play, RotateCcw, Volume2, VolumeX } from 'lucide-react';
+import { MARIO_PALETTES, MARIO_SPRITES } from '../mario/MarioSprites';
+import { updateMarioPhysics } from '../mario/MarioPhysics';
 
 interface GameCanvasProps {
   levelId: string;
@@ -16,6 +18,7 @@ interface GameCanvasProps {
   onPressKey: (key: string, isPressed: boolean) => void;
   consoleMode: 'retro' | 'touch';
   onToggleConsoleMode: () => void;
+  consoleTheme?: 'gameboy' | 'snes';
 }
 
 export default function GameCanvas({
@@ -30,15 +33,18 @@ export default function GameCanvas({
   activeKeys,
   onPressKey,
   consoleMode,
-  onToggleConsoleMode
+  onToggleConsoleMode,
+  consoleTheme = 'snes'
 }: GameCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const GAME_WIDTH = consoleTheme === 'snes' ? 800 : 640;
   
   // Game states we need to track
   const [isPaused, setIsPaused] = useState(false);
   const [timeRemaining, setTimeRemaining] = useState(300);
   const [levelTheme, setLevelTheme] = useState<'green' | 'cave' | 'sierra' | 'desert' | 'neon' | 'castle'>('green');
   const [crtEnabled, setCrtEnabled] = useState(true);
+  const [activePlayerType, setActivePlayerType] = useState<'explorer' | 'glasses' | 'truck' | 'bike' | 'catquad' | 'brocoliano' | 'mario'>('explorer');
   
   // Touch interface states
   const [showTouchOverlay, setShowTouchOverlay] = useState(false);
@@ -71,7 +77,7 @@ export default function GameCanvas({
     pOnGround: false,
     pInvulnerableFrames: 0,
     pPowerUp: stats.activePowerUp,
-    playerType: 'explorer' as 'explorer' | 'glasses' | 'truck' | 'bike' | 'catquad' | 'brocoliano',
+    playerType: 'explorer' as 'explorer' | 'glasses' | 'truck' | 'bike' | 'catquad' | 'brocoliano' | 'mario',
     jumpCount: 0,
     wasJumpKeyDown: false,
     
@@ -113,6 +119,17 @@ export default function GameCanvas({
     lightningTimer: 0,
     texts: [] as FloatingText[],
     landSquish: 0,
+    
+    // Caballo (Yoshi equivalent Horse Mount) states
+    carrotsCollected: 0,
+    mountedHorse: false,
+    isLassoing: 0, 
+    lassoLength: 0, 
+    lassoState: 'idle' as 'idle' | 'extend' | 'retract' | 'pull',
+    lassoTargetEnemyId: null as string | null,
+    lassoAnchorX: 0,
+    lassoAnchorY: 0,
+    lastMountedState: false,
     
     // Trampas (traps) placed by SELECT
     trapsMax: 3,
@@ -173,9 +190,87 @@ export default function GameCanvas({
     };
   }, [levelId]);
 
-  // Read inputs from activeKeys and synchronize on stateRef
+  // Read inputs from activeKeys and synchronize on stateRef with zero-lag direct window listeners
   useEffect(() => {
+    // Sync initial activeKeys
     stateRef.current.keys = { ...activeKeys };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Guard: Ignore physical keyboard commands if the user is typing in any input field or textarea
+      if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) {
+        return;
+      }
+
+      // Prevent browser default actions during active gameplay inside the canvas
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'Spacebar'].includes(e.key)) {
+        e.preventDefault();
+      }
+
+      let k = e.key;
+      if (e.key === ' ' || e.key === 'Spacebar') k = 'Space';
+      if (e.key.toLowerCase() === 'z') k = 'select';
+      if (e.key.toLowerCase() === 'c' || e.key.toLowerCase() === 'y') k = 'c';
+      if (e.key.toLowerCase() === 'x' || e.key.toLowerCase() === 'v' || e.key.toLowerCase() === 'k') k = 'x';
+      if (e.key.toLowerCase() === 'b') k = 'b';
+      if (e.key === 'Shift') k = 'b';
+      if (e.key === 'Enter') k = 'start';
+      if (e.key === 'Escape') k = 'start';
+
+      const s = stateRef.current;
+      if (s) {
+        if (e.key.toLowerCase() === 'm') {
+          if (s.playerType === 'mario') {
+            let origType: 'explorer' | 'glasses' | 'truck' | 'bike' | 'catquad' | 'brocoliano' | 'mario' = 'explorer';
+            if (levelId === 'level2') origType = 'glasses';
+            else if (levelId === 'level3') origType = 'truck';
+            else if (levelId === 'level4') origType = 'bike';
+            else if (levelId === 'level5') origType = 'catquad';
+            else if (levelId === 'level6') origType = 'brocoliano';
+            s.playerType = origType;
+            setActivePlayerType(origType);
+            audio.playPowerDown();
+          } else {
+            s.playerType = 'mario';
+            setActivePlayerType('mario');
+            audio.playPowerUp();
+          }
+        }
+        s.keys[k] = true;
+        s.keys[e.key] = true;
+        s.keys[e.key.toLowerCase()] = true;
+      }
+    };
+
+    const handleKeyUp = (e: KeyboardEvent) => {
+      // Guard: Ignore key release events if typing in form inputs
+      if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) {
+        return;
+      }
+
+      let k = e.key;
+      if (e.key === ' ' || e.key === 'Spacebar') k = 'Space';
+      if (e.key.toLowerCase() === 'z') k = 'select';
+      if (e.key.toLowerCase() === 'c' || e.key.toLowerCase() === 'y') k = 'c';
+      if (e.key.toLowerCase() === 'x' || e.key.toLowerCase() === 'v' || e.key.toLowerCase() === 'k') k = 'x';
+      if (e.key.toLowerCase() === 'b') k = 'b';
+      if (e.key === 'Shift') k = 'b';
+      if (e.key === 'Enter') k = 'start';
+      if (e.key === 'Escape') k = 'start';
+
+      const s = stateRef.current;
+      if (s) {
+        s.keys[k] = false;
+        s.keys[e.key] = false;
+        s.keys[e.key.toLowerCase()] = false;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
   }, [activeKeys]);
 
   // Setup/Create level geometry
@@ -194,6 +289,15 @@ export default function GameCanvas({
     s.finishTimer = 0;
     s.coinsCollected = 0;
     s.scoreAdded = 0;
+    
+    // Caballo states reset
+    s.carrotsCollected = 0;
+    s.mountedHorse = false;
+    s.isLassoing = 0;
+    s.lassoLength = 0;
+    s.lassoState = 'idle';
+    s.lassoTargetEnemyId = null;
+    s.lastMountedState = false;
     s.goalBarY = 120;
     s.bossActive = false;
     s.projectiles = [];
@@ -211,7 +315,7 @@ export default function GameCanvas({
     else if (levelId === 'level5') theme = 'neon';
     else if (levelId === 'level6') theme = 'castle';
 
-    let pType: 'explorer' | 'glasses' | 'truck' | 'bike' | 'catquad' | 'brocoliano' = 'explorer';
+    let pType: 'explorer' | 'glasses' | 'truck' | 'bike' | 'catquad' | 'brocoliano' | 'mario' = 'explorer';
     if (levelId === 'level2') pType = 'glasses';
     else if (levelId === 'level3') pType = 'truck';
     else if (levelId === 'level4') pType = 'bike';
@@ -219,6 +323,7 @@ export default function GameCanvas({
     else if (levelId === 'level6') pType = 'brocoliano';
     
     s.playerType = pType;
+    setActivePlayerType(pType);
 
     // Adjust sizes for vehicles vs humans
     if (pType === 'truck') {
@@ -284,28 +389,109 @@ export default function GameCanvas({
 
     // Pipes, ramps, and platforms
     if (theme === 'green') {
-      // Pipes
-      blocks.push({ id: 'pipe1-x240', x: 8, y: 11, type: 'pipe' });
-      blocks.push({ id: 'pipe1-x240-top', x: 8, y: 12, type: 'pipe' });
-      
-      blocks.push({ id: 'pipe2-x360', x: 22, y: 10, type: 'pipe' });
-      blocks.push({ id: 'pipe2-x360-1', x: 22, y: 11, type: 'pipe' });
-      blocks.push({ id: 'pipe2-x360-2', x: 22, y: 12, type: 'pipe' });
+      // --- FOREST REGION (Tiles 0 to 25) ---
 
-      // Bricks & question blocks with powerups
-      blocks.push({ id: 'brick-1', x: 10, y: 9, type: 'brick' });
-      blocks.push({ id: 'q-fire', x: 11, y: 9, type: 'question', contains: 'powerup-fire' });
-      blocks.push({ id: 'brick-2', x: 12, y: 9, type: 'brick' });
-      blocks.push({ id: 'q-coin1', x: 13, y: 9, type: 'question', contains: 'coin' });
-      blocks.push({ id: 'brick-3', x: 14, y: 9, type: 'brick' });
+      // Soil platform 1 (mesa): Tiles 10, 11, 12. Soil underneath, grass face on top
+      blocks.push({ id: 'forest-mesa1-g1', x: 10, y: 12, type: 'ground' });
+      blocks.push({ id: 'forest-mesa1-g2', x: 11, y: 12, type: 'ground' });
+      blocks.push({ id: 'forest-mesa1-g3', x: 12, y: 12, type: 'ground' });
+      blocks.push({ id: 'forest-mesa1-g4', x: 10, y: 11, type: 'ground' });
+      blocks.push({ id: 'forest-mesa1-g5', x: 11, y: 11, type: 'ground' });
+      blocks.push({ id: 'forest-mesa1-g6', x: 12, y: 11, type: 'ground' });
 
-      blocks.push({ id: 'q-ice', x: 19, y: 6, type: 'question', contains: 'powerup-ice' });
-      blocks.push({ id: 'q-turbo', x: 26, y: 8, type: 'question', contains: 'powerup-turbo' });
+      // Bricks and question block containing powerup-fire above mesa 1
+      blocks.push({ id: 'forest-brick-1', x: 10, y: 8, type: 'brick' });
+      blocks.push({ id: 'q-fire', x: 11, y: 8, type: 'question', contains: 'powerup-fire' });
+      blocks.push({ id: 'forest-brick-2', x: 12, y: 8, type: 'brick' });
 
-      // Floating liftable bags (support packages!)
-      blocks.push({ id: 'lift-1', x: 30, y: 12, type: 'liftable' });
-      blocks.push({ id: 'lift-2', x: 31, y: 12, type: 'liftable' });
-      blocks.push({ id: 'lift-3', x: 32, y: 12, type: 'liftable' });
+      // 3 Floating coins right after mesa 1, hovering over the ground path
+      blocks.push({ id: 'forest-coin-1', x: 14, y: 10, type: 'coin' });
+      blocks.push({ id: 'forest-coin-2', x: 15, y: 10, type: 'coin' });
+      blocks.push({ id: 'forest-coin-3', x: 16, y: 10, type: 'coin' });
+
+      // Soil platform 2 (mesa): Tiles 17, 18
+      blocks.push({ id: 'forest-mesa2-g1', x: 17, y: 12, type: 'ground' });
+      blocks.push({ id: 'forest-mesa2-g2', x: 18, y: 12, type: 'ground' });
+      blocks.push({ id: 'forest-mesa2-g3', x: 17, y: 11, type: 'ground' });
+      blocks.push({ id: 'forest-mesa2-g4', x: 18, y: 11, type: 'ground' });
+
+      // Question block containing powerup-ice above mesa 2
+      blocks.push({ id: 'q-ice', x: 18, y: 8, type: 'question', contains: 'powerup-ice' });
+
+
+      // --- CENTRAL RUINS & CASCADE WATERFALL REGION (Tiles 25 to 50) ---
+
+      // Stone steps / pyramid going up: Steps at columns 26, 27, 28, 29, 30
+      // step 1
+      blocks.push({ id: 'pyr-step-1', x: 26, y: 12, type: 'brick' });
+      // step 2
+      blocks.push({ id: 'pyr-step-2a', x: 27, y: 12, type: 'brick' });
+      blocks.push({ id: 'pyr-step-2b', x: 27, y: 11, type: 'brick' });
+      // step 3
+      blocks.push({ id: 'pyr-step-3a', x: 28, y: 12, type: 'brick' });
+      blocks.push({ id: 'pyr-step-3b', x: 28, y: 11, type: 'brick' });
+      blocks.push({ id: 'pyr-step-3c', x: 28, y: 10, type: 'brick' });
+      // step 4
+      blocks.push({ id: 'pyr-step-4a', x: 29, y: 12, type: 'brick' });
+      blocks.push({ id: 'pyr-step-4b', x: 29, y: 11, type: 'brick' });
+      blocks.push({ id: 'pyr-step-4c', x: 29, y: 10, type: 'brick' });
+      blocks.push({ id: 'pyr-step-4d', x: 29, y: 9, type: 'brick' });
+
+      // Coins floating super high near the pyramid summit and waterfall source
+      blocks.push({ id: 'pyr-coin-1', x: 28, y: 7, type: 'coin' });
+      blocks.push({ id: 'pyr-coin-2', x: 29, y: 7, type: 'coin' });
+
+      // Question block hovering above ruins stairs containing powerup-turbo
+      blocks.push({ id: 'q-turbo', x: 31, y: 7, type: 'question', contains: 'powerup-turbo' });
+
+      // Stone slab ceiling / ancient archway bridge structure over bottom path (Tiles 35 to 40)
+      for (let tx = 35; tx <= 40; tx++) {
+        blocks.push({ id: `ruin-ceil-${tx}`, x: tx, y: 9, type: 'brick' });
+      }
+
+      // Standalone coins hovering gracefully above the ancient archway ceiling
+      blocks.push({ id: 'arch-coin-1', x: 37, y: 7, type: 'coin' });
+      blocks.push({ id: 'arch-coin-2', x: 38, y: 7, type: 'coin' });
+
+      // Interactive liftable blocks right inside the temple ruins passage underneath the stone ceiling
+      blocks.push({ id: 'lift-1', x: 36, y: 12, type: 'liftable' });
+      blocks.push({ id: 'lift-2', x: 37, y: 12, type: 'liftable' });
+      blocks.push({ id: 'lift-3', x: 38, y: 12, type: 'liftable' });
+
+      // Pipe-gate structure on the right exit of ruins passage (Tile 43)
+      blocks.push({ id: 'pipe1-x240', x: 43, y: 12, type: 'pipe' });
+      blocks.push({ id: 'pipe1-x240-top', x: 43, y: 11, type: 'pipe' });
+
+
+      // --- DESERT RIVER & CACTI REGION (Tiles 50 to 74) ---
+
+      // Bridge made of bricks crossing over the winding blue river (cols 53, 54, 55, 56)
+      blocks.push({ id: 'bridge-1n', x: 53, y: 12, type: 'brick' });
+      blocks.push({ id: 'bridge-2n', x: 54, y: 12, type: 'brick' });
+      blocks.push({ id: 'bridge-3n', x: 55, y: 12, type: 'brick' });
+      blocks.push({ id: 'bridge-4n', x: 56, y: 12, type: 'brick' });
+
+      // Coins floating above the winding river bridge
+      blocks.push({ id: 'river-coin-1', x: 54, y: 9, type: 'coin' });
+      blocks.push({ id: 'river-coin-2', x: 55, y: 9, type: 'coin' });
+
+      // Pillars/Posts (stone columns block layout)
+      blocks.push({ id: 'pillar-1-b2', x: 58, y: 12, type: 'brick' });
+      blocks.push({ id: 'pillar-1-b1', x: 58, y: 11, type: 'brick' });
+      blocks.push({ id: 'pillar-coin-1', x: 58, y: 9, type: 'coin' });
+
+      blocks.push({ id: 'pillar-2-b1', x: 60, y: 12, type: 'brick' });
+      blocks.push({ id: 'pillar-coin-2', x: 60, y: 10, type: 'coin' });
+
+      // Special spinning yellow block (mystic runes chest containing coin) next to 3 gorgeous coins
+      blocks.push({ id: 'q-coin-golden-block', x: 63, y: 9, type: 'question', contains: 'coin' });
+      blocks.push({ id: 'desert-coin-a', x: 64, y: 9, type: 'coin' });
+      blocks.push({ id: 'desert-coin-b', x: 65, y: 9, type: 'coin' });
+      blocks.push({ id: 'desert-coin-c', x: 66, y: 9, type: 'coin' });
+
+      // Danger zones: Natural green Cardón Cacti styled spikes!
+      blocks.push({ id: 'desert-cactus-spike1', x: 68, y: 12, type: 'spike' });
+      blocks.push({ id: 'desert-cactus-spike2', x: 71, y: 12, type: 'spike' });
 
     } else if (theme === 'cave') {
       // Ceiling blocks
@@ -402,6 +588,17 @@ export default function GameCanvas({
     // Place SMW Goal gate at the end
     const lastTileX = totalTiles - 5;
     blocks.push({ id: 'goal-pole-left', x: lastTileX, y: 12, type: 'goal' });
+
+    // Place 3 sweet organic carrots scattered at fun heights across the level!
+    if (theme === 'green') {
+      blocks.push({ id: 'carrot-1', x: 11, y: 6, type: 'carrot' });
+      blocks.push({ id: 'carrot-2', x: 30, y: 5, type: 'carrot' });
+      blocks.push({ id: 'carrot-3', x: 50, y: 8, type: 'carrot' });
+    } else {
+      blocks.push({ id: 'carrot-1', x: 14, y: 8, type: 'carrot' });
+      blocks.push({ id: 'carrot-2', x: 28, y: 6, type: 'carrot' });
+      blocks.push({ id: 'carrot-3', x: 48, y: 7, type: 'carrot' });
+    }
 
     s.blocks = blocks;
 
@@ -630,8 +827,8 @@ export default function GameCanvas({
     } else {
       // Winning sequence timer tickers
       s.finishTimer++;
-      if (s.finishTimer > 150) {
-        // Trigger completion callback
+      if (s.finishTimer === 150) {
+        // Trigger completion callback exactly once when reaching frame 150
         onClearLevel(s.scoreAdded, s.coinsCollected);
       }
       // Stop keyboard movement
@@ -690,22 +887,52 @@ export default function GameCanvas({
     }
     
     const maxWalkSpeed = (isTurboPressed ? 5.8 : 3.6) * speedMultiplier;
-    const acceleration = 0.58 * speedMultiplier;
-    const friction = s.playerType === 'truck' ? 0.85 : 0.72; // Snappier braking so player doesn't slide like on ice
+    
+    const isJumpPressed = s.keys['ArrowUp'] || s.keys['Space'] || s.keys[' '] || s.keys['w'] || s.keys['W'] || touchKeysRef.current['ArrowUp'] || touchKeysRef.current['Space'];
 
-    if (activeDirection === 'left') {
-      s.pvx -= acceleration;
-      s.pFacing = 'left';
-    } else if (activeDirection === 'right') {
-      s.pvx += acceleration;
-      s.pFacing = 'right';
+    if (s.playerType === 'mario') {
+      const inputs = {
+        left: activeDirection === 'left',
+        right: activeDirection === 'right',
+        jump: isJumpPressed,
+        run: isTurboPressed
+      };
+      const { isSkidding, spawnedDust } = updateMarioPhysics(s, inputs, speedMultiplier);
+      if (spawnedDust && Math.random() < 0.3) {
+        s.particles.push({
+          id: Math.random().toString(),
+          x: s.px + s.pWidth / 2 + (s.pFacing === 'left' ? 4 : -4),
+          y: s.py + s.pHeight - 2,
+          vx: (Math.random() - 0.5) * 1.5 - (s.pvx * 0.2),
+          vy: -Math.random() * 1.2 - 0.4,
+          color: 'rgba(235, 235, 235, 0.7)',
+          size: Math.random() * 3 + 1,
+          life: 1.0
+        });
+      }
     } else {
-      s.pvx *= friction;
-      if (Math.abs(s.pvx) < 0.1) s.pvx = 0;
-    }
+      // SNES Euler Acceleration integration for responsive yet fluid inertial curves!
+      if (activeDirection !== null) {
+        const targetVx = activeDirection === 'left' ? -maxWalkSpeed : maxWalkSpeed;
+        s.pFacing = activeDirection;
+        
+        if (s.pOnGround) {
+          // Highly responsive yet smooth ground acceleration curve
+          s.pvx += (targetVx - s.pvx) * 0.16;
+        } else {
+          // Greater aerial control: high maneuvering responsiveness in mid-air
+          s.pvx += (targetVx - s.pvx) * 0.12;
+        }
+      } else {
+        // Fluid inertial deceleration glide typical of 16-bit SNES games
+        const stopFactor = s.pOnGround ? 0.81 : 0.94;
+        s.pvx *= stopFactor;
+        if (Math.abs(s.pvx) < 0.08) s.pvx = 0;
+      }
 
-    // Clamp speed limits
-    s.pvx = Math.max(-maxWalkSpeed, Math.min(s.pvx, maxWalkSpeed));
+      // Clamp speed limits
+      s.pvx = Math.max(-maxWalkSpeed, Math.min(s.pvx, maxWalkSpeed));
+    }
 
     // Determine priority-based animation state
     // Priority order: 1. Jump (Airborne), 2. Duck (Crouch), 3. Walk, 4. Idle
@@ -721,6 +948,41 @@ export default function GameCanvas({
       s.pAnimState = 'idle';
     }
 
+    // Real-Time Hitbox and Skeleton alignment update from custom frames
+    const customSpr = (window as any)._customSprites;
+    if (customSpr?.enabled) {
+      const animState = s.pAnimState; // 'idle', 'walk', 'jump', 'duck'
+      const key = `${s.mountedHorse ? 'horse' : 'player'}_${animState}`;
+      const sk = customSpr.skeletons?.[key];
+      if (sk) {
+        const scale = s.mountedHorse ? 2.5 : (customSpr.spriteScale || 2.5);
+        const spriteBasePixelSize = 16 * scale; // e.g. 16px * 2.5 = 40px
+
+        // Use custom skeleton hitbox width and height based on user settings
+        // Expanded up to 128px max constraint to natively support large 64x64 and 128x128 custom sprites cleanly
+        s.pWidth = Math.max(12, Math.min(128, spriteBasePixelSize * sk.width));
+        s.pHeight = Math.max(12, Math.min(128, spriteBasePixelSize * sk.height));
+      } else {
+        // Fallback to active player default sizes if skeletons are uninitialized for this frame
+        if (s.playerType === 'truck') {
+          s.pWidth = 28;
+          s.pHeight = 22;
+        } else if (s.playerType === 'bike') {
+          s.pWidth = 22;
+          s.pHeight = 20;
+        } else if (s.playerType === 'catquad') {
+          s.pWidth = 26;
+          s.pHeight = 22;
+        } else if (s.playerType === 'brocoliano') {
+          s.pWidth = 20;
+          s.pHeight = 26;
+        } else {
+          s.pWidth = s.mountedHorse ? 30 : 18;
+          s.pHeight = s.mountedHorse ? 30 : 30;
+        }
+      }
+    }
+
     // Tick appropriate frame counts
     s.pAnimFrame = (s.pAnimFrame || 0) + 1;
     if (s.pAnimState === 'walk') {
@@ -731,12 +993,16 @@ export default function GameCanvas({
 
     // 4. Vertical Jump parameters (A button / ArrowUp / Space / W)
     // REMOVED 'a' / 'A' keys to resolve fatal conflict with walking left
-    const isJumpPressed = s.keys['ArrowUp'] || s.keys['Space'] || s.keys[' '] || s.keys['w'] || s.keys['W'] || touchKeysRef.current['ArrowUp'] || touchKeysRef.current['Space'];
-    const gravity = 0.62;
+    // (Reusing outer-scoped isJumpPressed declaration)
+    
+    if (s.playerType !== 'mario') {
+      // SNES characteristics: Lower gravity when holding the jumping button while rising, allowing high leaps vs fast hops!
+      const gravity = (isJumpPressed && s.pvy < 0) ? 0.32 : 0.65;
 
-    s.pvy += gravity;
-    // Advanced Physics Simulation: Terminal velocity/air resistance clamp (prevents high-fall tile tunneling and jerky drops)
-    if (s.pvy > 12.5) s.pvy = 12.5;
+      s.pvy += gravity;
+      // Advanced Physics Simulation: Terminal velocity/air resistance clamp (prevents high-fall tile tunneling and jerky drops)
+      if (s.pvy > 12.5) s.pvy = 12.5;
+    }
 
     // Hover flight for brocoliano!
     if (s.playerType === 'brocoliano' && !s.pOnGround && isJumpPressed && s.pvy > 0) {
@@ -764,8 +1030,12 @@ export default function GameCanvas({
     const wasJumpKeyDown = s.wasJumpKeyDown || false;
     if (isJumpPressed && !wasJumpKeyDown) {
       if (s.pOnGround) {
-        // First jump - tuned for snappier rise/fall with upgraded gravity
-        s.pvy = isTurboPressed ? -12.5 : -10.8;
+        if (s.playerType === 'mario') {
+          s.pvy = isTurboPressed ? -8.2 : -7.5;
+        } else {
+          // First jump - tuned for snappier rise/fall with upgraded gravity
+          s.pvy = isTurboPressed ? -12.5 : -10.8;
+        }
         s.pOnGround = false;
         audio.playJump();
         
@@ -851,7 +1121,7 @@ export default function GameCanvas({
 
     // Pre-resolve horizontal block collisions (stops side-clipping and being stuck)
     s.blocks.forEach((b) => {
-      if (b.type === 'lava' || b.type === 'empty-question') return;
+      if (b.type === 'lava' || b.type === 'empty-question' || b.type === 'carrot' || b.type === 'stable' || b.type === 'coin') return;
       const bx = b.x * tileSize;
       const by = b.y * tileSize;
 
@@ -865,7 +1135,10 @@ export default function GameCanvas({
         const oL = s.px + s.pWidth - bx;
         const oR = bx + tileSize - s.px;
 
-        if (oL < oR) {
+        // Velocity-based collision response natively supports large sprites (64px/128px) by avoiding misleading overlap calculations
+        const pushDirection = s.pvx > 0 ? 'left' : (s.pvx < 0 ? 'right' : (oL < oR ? 'left' : 'right'));
+
+        if (pushDirection === 'left') {
           // Colliding on progress to right
           if (b.type === 'liftable' && isTurboPressed) {
             s.blocks = s.blocks.filter((item) => item.id !== b.id);
@@ -916,6 +1189,131 @@ export default function GameCanvas({
         playerBox.y + playerBox.height > by
       ) {
         // Determine type of blocks effects
+        if (b.type === 'coin') {
+          s.blocks = s.blocks.filter((item) => item.id !== b.id);
+          s.coinsCollected++;
+          s.scoreAdded += 100;
+          audio.playCoin();
+          
+          s.texts.push({
+            id: Math.random().toString(),
+            text: '🪙 +100',
+            x: bx,
+            y: by - 12,
+            life: 1.0
+          });
+          onUpdateStats({ coins: stats.coins + 1, score: stats.score + 100 });
+          
+          for (let i = 0; i < 8; i++) {
+            s.particles.push({
+              id: Math.random().toString(),
+              x: bx + 16,
+              y: by + 16,
+              vx: (Math.random() - 0.5) * 4,
+              vy: (Math.random() - 0.5) * 4 - 1.5,
+              color: i % 2 === 0 ? '#facc15' : '#ffffff',
+              size: Math.random() * 3 + 1.5,
+              life: 1.0
+            });
+          }
+          return;
+        }
+
+        if (b.type === 'carrot') {
+          // Collect Carrot!
+          s.blocks = s.blocks.filter((item) => item.id !== b.id);
+          s.carrotsCollected++;
+          audio.playCoin();
+          
+          s.texts.push({
+            id: Math.random().toString(),
+            text: `🥕 Zanahoria ${s.carrotsCollected}/3!`,
+            x: bx,
+            y: by - 12,
+            life: 1.2
+          });
+          
+          for (let i = 0; i < 12; i++) {
+            s.particles.push({
+              id: Math.random().toString(),
+              x: bx + 16,
+              y: by + 16,
+              vx: (Math.random() - 0.5) * 5,
+              vy: (Math.random() - 0.5) * 5,
+              color: i % 2 === 0 ? '#ff7f50' : '#2ecc71',
+              size: Math.random() * 4 + 2,
+              life: 1.0
+            });
+          }
+
+          if (s.carrotsCollected === 3) {
+            // SPARK A MAGICAL STABLE IN FRONT OF PLAYER!
+            const stableX = Math.floor((s.px + 128) / 32);
+            s.blocks = s.blocks.filter(item => !(item.x === stableX && item.y === 11 && item.type !== 'ground'));
+            s.blocks.push({
+              id: 'stable-block',
+              x: stableX,
+              y: 11,
+              type: 'stable'
+            });
+
+            s.texts.push({
+              id: Math.random().toString(),
+              text: '🐎 ¡EL ESTABLO SE HA ABIERTO! 🐎',
+              x: s.px,
+              y: s.py - 30,
+              life: 2.0
+            });
+
+            audio.playPowerUp();
+            s.screenShake = 6.0;
+
+            for (let i = 0; i < 20; i++) {
+              s.particles.push({
+                id: Math.random().toString(),
+                x: stableX * 32 + 16,
+                y: 11 * 32 + 16,
+                vx: (Math.random() - 0.5) * 6,
+                vy: (Math.random() - 0.5) * 6,
+                color: '#f1c40f',
+                size: Math.random() * 5 + 3,
+                life: 1.0
+              });
+            }
+          }
+          return;
+        }
+
+        if (b.type === 'stable') {
+          if (!s.mountedHorse) {
+            s.mountedHorse = true;
+            s.blocks = s.blocks.filter((item) => item.id !== b.id); // Consumed so player mounts horse!
+            s.texts.push({
+              id: Math.random().toString(),
+              text: '🐎 ¡CABALLO MONTADO! (YOSHI MODE)',
+              x: s.px,
+              y: s.py - 30,
+              life: 1.8
+            });
+            audio.playPowerUp();
+            s.screenShake = 10.0;
+
+            for (let i = 0; i < 25; i++) {
+              s.particles.push({
+                id: Math.random().toString(),
+                x: s.px + 10,
+                y: s.py + 10,
+                vx: (Math.random() - 0.5) * 7,
+                vy: -Math.random() * 5 - 3,
+                color: i % 3 === 0 ? '#ff7f50' : (i % 3 === 1 ? '#f1c40f' : '#2ecc71'),
+                size: Math.random() * 5 + 2,
+                life: 1.0
+              });
+            }
+          }
+          return;
+        }
+
         if (b.type === 'lava') {
           handlePlayerDeath();
           return;
@@ -929,7 +1327,10 @@ export default function GameCanvas({
         const oT = playerBox.y + playerBox.height - by;
         const oB = by + tileSize - playerBox.y;
 
-        if (oT < oB) {
+        // Velocity-based vertical collision response handles any tall custom sprites natively
+        const isLanding = s.pvy > 0 ? true : (s.pvy < 0 ? false : (oT < oB));
+
+        if (isLanding) {
           // Land on top
           if (s.pvy >= 0) {
             s.py -= oT;
@@ -1144,75 +1545,219 @@ export default function GameCanvas({
     const isFirePressed = s.keys['c'] || s.keys['C'] || s.keys['y'] || s.keys['Y'] || touchKeysRef.current['c'];
     const isIcePressed = s.keys['x'] || s.keys['X'] || s.keys['d'] || s.keys['D'] || touchKeysRef.current['x'];
 
-    if (isFirePressed && s.fireCooldown === 0) {
-      s.fireCooldown = 15; // Rate of fire cooldown frames
-      s.screenShake = 3.5; // Slight punchy kickback screen shake!
-
-      const shootX = s.px + (s.pFacing === 'right' ? s.pWidth : -10);
-      const shootY = s.py + 8;
-      const isFirePower = s.pPowerUp === 'fire';
-      const pvx = s.pFacing === 'right' ? (isFirePower ? 5 : 4.5) : (isFirePower ? -5 : -4.5);
-
-      s.projectiles.push({
-        id: Math.random().toString(),
-        x: shootX,
-        y: shootY,
-        vx: pvx,
-        vy: isFirePower ? 2 : 1.5,
-        type: isFirePower ? 'fire' : 'rock',
-        bounces: isFirePower ? 3 : 2
-      });
-      audio.playShoot();
-
-      // Bullet spark muzzle flare particles
-      const pColor = isFirePower ? '#ffa502' : '#834c14';
-      for (let i = 0; i < 6; i++) {
-        s.particles.push({
-          id: Math.random().toString(),
-          x: shootX,
-          y: shootY,
-          vx: (s.pFacing === 'right' ? 1.5 : -1.5) + (Math.random() - 0.5) * 3,
-          vy: (Math.random() - 0.5) * 3,
-          color: i % 2 === 0 ? pColor : '#ff4757',
-          size: Math.random() * 3 + 1.5,
-          life: 0.8
-        });
+    if (s.mountedHorse) {
+      // 🐴 ACTIVE CABALLO COMPANION LASSO ACTION ENGINE!
+      if ((isFirePressed || isIcePressed) && s.lassoState === 'idle' && s.isLassoing === 0) {
+        s.lassoState = 'extend';
+        s.lassoLength = 0;
+        s.lassoTargetEnemyId = null;
+        s.isLassoing = 30; // lasso cool-down frames
+        audio.playShoot(); // whip-lash throw swish sound!
+        
+        // Spawn brown/golden lasso rope particles at throw site
+        for (let i = 0; i < 8; i++) {
+          s.particles.push({
+            id: Math.random().toString(),
+            x: s.px + (s.pFacing === 'right' ? s.pWidth : 0),
+            y: s.py + 16,
+            vx: (s.pFacing === 'right' ? 3.5 : -3.5) + (Math.random() - 0.5) * 2.5,
+            vy: (Math.random() - 0.5) * 3,
+            color: i % 2 === 0 ? '#b58b52' : '#ebd5a8',
+            size: Math.random() * 3.5 + 1.5,
+            life: 0.7
+          });
+        }
       }
-    }
 
-    if (isIcePressed && s.iceCooldown === 0) {
-      s.iceCooldown = 15;
-      s.screenShake = 3.5;
+      // Lasso State Machine ticking
+      if (s.lassoState === 'extend') {
+        s.lassoLength += 15;
+        if (s.lassoLength >= 180) { // massive 5.5 tiles lasso range!
+          s.lassoState = 'retract';
+        }
 
-      const shootX = s.px + (s.pFacing === 'right' ? s.pWidth : -10);
-      const shootY = s.py + 8;
-      const isIcePower = s.pPowerUp === 'ice';
-      const pvx = s.pFacing === 'right' ? (isIcePower ? 4.5 : 4.2) : (isIcePower ? -4.5 : -4.2);
+        // Project lasso coordinates tip
+        const tipX = s.px + s.pWidth / 2 + (s.pFacing === 'right' ? s.lassoLength : -s.lassoLength);
+        const tipY = s.py + 14;
 
-      s.projectiles.push({
-        id: Math.random().toString(),
-        x: shootX,
-        y: shootY,
-        vx: pvx,
-        vy: isIcePower ? 2 : 1.5,
-        type: isIcePower ? 'ice' : 'spark',
-        bounces: isIcePower ? 3 : 2
-      });
-      audio.playShoot();
+        // Collision test against all active level enemies
+        s.enemies.forEach((enemy) => {
+          if (enemy.state !== 'squished' && enemy.state !== 'frozen') {
+            const ex = enemy.x;
+            const ey = enemy.y;
+            const ew = enemy.width;
+            const eh = enemy.height;
 
-      // Ice/Spark muzzle flare particles
-      const pColor = isIcePower ? '#70a1ff' : '#00f7ff';
-      for (let i = 0; i < 6; i++) {
-        s.particles.push({
+            if (
+              tipX >= ex && tipX <= ex + ew &&
+              tipY >= ey && tipY <= ey + eh
+            ) {
+              if (enemy.type === 'jefe') {
+                // Boss is heavy: strike/crack lasso for severe damage and bounce back
+                enemy.hp--;
+                s.lassoState = 'retract';
+                s.texts.push({
+                  id: Math.random().toString(),
+                  text: '💥 ¡SUPER AZOTE LATIGAZO! -1 PS',
+                  x: enemy.x,
+                  y: enemy.y - 15,
+                  life: 1.2
+                });
+                s.screenShake = 15.0; // intense cinematic punch shake!
+                audio.playBlockHit();
+              } else {
+                // Hook ordinary enemy on the horse lasso lassoed rope!
+                s.lassoState = 'pull';
+                s.lassoTargetEnemyId = enemy.id;
+                s.texts.push({
+                  id: Math.random().toString(),
+                  text: '🪢 ¡CAPTURADO!',
+                  x: enemy.x,
+                  y: enemy.y - 12,
+                  life: 0.8
+                });
+                audio.playStomp();
+              }
+            }
+          }
+        });
+      } else if (s.lassoState === 'pull') {
+        s.lassoLength -= 14;
+        if (s.lassoTargetEnemyId) {
+          const caught = s.enemies.find((e) => e.id === s.lassoTargetEnemyId);
+          if (caught) {
+            // Magnetic locking coordinates aligning enemy to the lasso lassoing tip
+            caught.x = s.px + s.pWidth / 2 + (s.pFacing === 'right' ? s.lassoLength : -s.lassoLength) - caught.width / 2;
+            caught.y = s.py + 14 - caught.height / 2;
+            caught.vx = 0;
+            caught.vy = 0;
+
+            if (s.lassoLength <= 24) {
+              // ENEMY CHOMPED YOSHI REWARD!
+              s.enemies = s.enemies.filter((e) => e.id !== caught.id);
+              s.scoreAdded += 500;
+              s.coinsCollected += 1;
+              onUpdateStats({ score: stats.score + 500, coins: stats.coins + 1 });
+              
+              audio.playPowerUp();
+              s.texts.push({
+                id: Math.random().toString(),
+                text: '🐴😋 ¡ÑAM! +500',
+                x: s.px,
+                y: s.py - 20,
+                life: 1.4
+              });
+
+              // Swallowed colorful fruit spark and starburst particles
+              for (let i = 0; i < 18; i++) {
+                s.particles.push({
+                  id: Math.random().toString(),
+                  x: s.px + s.pWidth / 2,
+                  y: s.py + 12,
+                  vx: (Math.random() - 0.5) * 7.5,
+                  vy: -Math.random() * 5 - 2,
+                  color: i % 3 === 0 ? '#ff7f50' : (i % 3 === 1 ? '#e1b12c' : '#44bd32'),
+                  size: Math.random() * 4.5 + 2.5,
+                  life: 0.95
+                });
+              }
+
+              // Apply Horse Ride Reward jump hop + horse speed boost!
+              s.pvy = -6.5;
+              s.pPowerUp = 'turbo'; // auto speed up
+              
+              s.lassoState = 'idle';
+              s.lassoLength = 0;
+              s.lassoTargetEnemyId = null;
+            }
+          } else {
+            s.lassoState = 'retract';
+          }
+        } else {
+          s.lassoState = 'retract';
+        }
+      } else if (s.lassoState === 'retract') {
+        s.lassoLength -= 15;
+        if (s.lassoLength <= 0) {
+          s.lassoState = 'idle';
+          s.lassoLength = 0;
+          s.lassoTargetEnemyId = null;
+        }
+      }
+
+      if (s.isLassoing > 0) s.isLassoing--;
+    } else {
+      // STANDARD HERO PROJECTS CASTING (WHEN NOT MOUNTED!)
+      if (isFirePressed && s.fireCooldown === 0) {
+        s.fireCooldown = 15; // Rate of fire cooldown frames
+        s.screenShake = 3.5; // Slight punchy kickback screen shake!
+
+        const shootX = s.px + (s.pFacing === 'right' ? s.pWidth : -10);
+        const shootY = s.py + 8;
+        const isFirePower = s.pPowerUp === 'fire';
+        const pvx = s.pFacing === 'right' ? (isFirePower ? 5 : 4.5) : (isFirePower ? -5 : -4.5);
+
+        s.projectiles.push({
           id: Math.random().toString(),
           x: shootX,
           y: shootY,
-          vx: (s.pFacing === 'right' ? 1.5 : -1.5) + (Math.random() - 0.5) * 3,
-          vy: (Math.random() - 0.5) * 3,
-          color: i % 2 === 0 ? pColor : '#ffffff',
-          size: Math.random() * 3 + 1.5,
-          life: 0.8
+          vx: pvx,
+          vy: isFirePower ? 2 : 1.5,
+          type: isFirePower ? 'fire' : 'rock',
+          bounces: isFirePower ? 3 : 2
         });
+        audio.playShoot();
+
+        // Bullet spark muzzle flare particles
+        const pColor = isFirePower ? '#ffa502' : '#834c14';
+        for (let i = 0; i < 6; i++) {
+          s.particles.push({
+            id: Math.random().toString(),
+            x: shootX,
+            y: shootY,
+            vx: (s.pFacing === 'right' ? 1.5 : -1.5) + (Math.random() - 0.5) * 3,
+            vy: (Math.random() - 0.5) * 3,
+            color: i % 2 === 0 ? pColor : '#ff4757',
+            size: Math.random() * 3 + 1.5,
+            life: 0.8
+          });
+        }
+      }
+
+      if (isIcePressed && s.iceCooldown === 0) {
+        s.iceCooldown = 15;
+        s.screenShake = 3.5;
+
+        const shootX = s.px + (s.pFacing === 'right' ? s.pWidth : -10);
+        const shootY = s.py + 8;
+        const isIcePower = s.pPowerUp === 'ice';
+        const pvx = s.pFacing === 'right' ? (isIcePower ? 4.5 : 4.2) : (isIcePower ? -4.5 : -4.2);
+
+        s.projectiles.push({
+          id: Math.random().toString(),
+          x: shootX,
+          y: shootY,
+          vx: pvx,
+          vy: isIcePower ? 2 : 1.5,
+          type: isIcePower ? 'ice' : 'spark',
+          bounces: isIcePower ? 3 : 2
+        });
+        audio.playShoot();
+
+        // Ice/Spark muzzle flare particles
+        const pColor = isIcePower ? '#70a1ff' : '#00f7ff';
+        for (let i = 0; i < 6; i++) {
+          s.particles.push({
+            id: Math.random().toString(),
+            x: shootX,
+            y: shootY,
+            vx: (s.pFacing === 'right' ? 1.5 : -1.5) + (Math.random() - 0.5) * 3,
+            vy: (Math.random() - 0.5) * 3,
+            color: i % 2 === 0 ? pColor : '#ffffff',
+            size: Math.random() * 3 + 1.5,
+            life: 0.8
+          });
+        }
       }
     }
 
@@ -1847,12 +2392,41 @@ export default function GameCanvas({
             length: 12 + Math.random() * 10,
           });
         }
+        // Spawn Oak leaves (Hojas de Encino) or Pinecones (Piñas)
+        if (Math.random() < 0.22) {
+          const leafColors = ['#1e4d2b', '#2d6a4f', '#40916c', '#b1f25d', '#d35400']; // green to golden canyon orange
+          s.weatherParticles.push({
+            id: `leaf-${Date.now()}-${Math.random()}`,
+            x: Math.random() * 660 - 20,
+            y: -15,
+            vx: -0.5 - Math.random() * 1.5,
+            vy: 1.2 + Math.random() * 1.2,
+            color: leafColors[Math.floor(Math.random() * leafColors.length)],
+            size: 4 + Math.random() * 4,
+            life: 1.0,
+            type: 'leaf',
+            swaySpeed: 0.012 + Math.random() * 0.015,
+          });
+        }
+        if (Math.random() < 0.08) {
+          s.weatherParticles.push({
+            id: `pinecone-${Date.now()}-${Math.random()}`,
+            x: Math.random() * 660 - 20,
+            y: -15,
+            vx: -0.8 - Math.random() * 1.2,
+            vy: 2.2 + Math.random() * 1.5,
+            color: '#5c3a21',
+            size: 5 + Math.random() * 3,
+            life: 1.0,
+            type: 'pinecone',
+          });
+        }
       } else if (levelTheme === 'desert' || levelTheme === 'green') {
         if (Math.random() < 0.35) {
           const isSunset = levelTheme === 'green';
           s.weatherParticles.push({
             id: `haze-${Date.now()}-${Math.random()}`,
-            x: Math.random() * 640,
+            x: Math.random() * GAME_WIDTH,
             y: 480 + 10,
             vx: (Math.random() - 0.5) * 0.3,
             vy: -1.0 - Math.random() * 1.2,
@@ -1867,7 +2441,7 @@ export default function GameCanvas({
         if (Math.random() < 0.08) {
           s.weatherParticles.push({
             id: `drop-${Date.now()}-${Math.random()}`,
-            x: Math.random() * 640,
+            x: Math.random() * GAME_WIDTH,
             y: Math.random() * 30 + 5,
             vx: 0,
             vy: 1.2 + Math.random() * 1.5,
@@ -1895,7 +2469,7 @@ export default function GameCanvas({
           const colors = ['rgba(0, 247, 255, 0.55)', 'rgba(255, 0, 127, 0.55)', 'rgba(241, 196, 15, 0.55)'];
           s.weatherParticles.push({
             id: `spore-${Date.now()}-${Math.random()}`,
-            x: Math.random() * 640,
+            x: Math.random() * GAME_WIDTH,
             y: Math.random() * 400 + 40,
             vx: (Math.random() - 0.5) * 0.6,
             vy: -0.4 - Math.random() * 0.6,
@@ -1910,7 +2484,7 @@ export default function GameCanvas({
         if (Math.random() < 0.4) {
           s.weatherParticles.push({
             id: `ember-rise-${Date.now()}-${Math.random()}`,
-            x: Math.random() * 640,
+            x: Math.random() * GAME_WIDTH,
             y: 480 + 10,
             vx: -1.0 - Math.random() * 1.5,
             vy: -2.5 - Math.random() * 2.5,
@@ -2024,6 +2598,16 @@ export default function GameCanvas({
       } else if (p.type === 'ember') {
         p.life -= 0.01;
         p.vx += (Math.random() - 0.5) * 0.2;
+      } else if (p.type === 'leaf') {
+        p.life -= 0.0025;
+        if (p.swaySpeed) {
+          p.vx += Math.sin(Date.now() * p.swaySpeed + p.x * 0.02) * 0.25;
+          p.vx = Math.max(-2.5, Math.min(2.5, p.vx));
+        }
+      } else if (p.type === 'pinecone') {
+        p.life -= 0.0035;
+        p.vx += (Math.random() - 0.5) * 0.15;
+        p.vx = Math.max(-2.0, Math.min(2.0, p.vx));
       }
 
       if (p.y > 490 || p.y < -30 || p.x < -150 || p.x > 790) {
@@ -2099,89 +2683,262 @@ export default function GameCanvas({
     };
 
     if (theme === 'green') {
-      // Warm orange-smoggy highway sunset sky of urban stress
+      // 1. Celestial blue sky gradient (matches the transparent grid blue vibe with clean morning sun)
       const skyGrad = ctx.createLinearGradient(0, 0, 0, canvas.height);
-      skyGrad.addColorStop(0, '#e74c3c'); // stress reddish orange sky
-      skyGrad.addColorStop(0.5, '#f39c12'); // golden horizon
-      skyGrad.addColorStop(1, '#ffeaa7'); // yellowish mist
+      skyGrad.addColorStop(0, '#7dd3fc'); // sky-300 light sky blue
+      skyGrad.addColorStop(0.6, '#bae6fd'); // sky-200 very light sky blue
+      skyGrad.addColorStop(1, '#f0f9ff'); // sky-50 softest horizon blue
       ctx.fillStyle = skyGrad;
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      // 16-bit drifting clouds (Improvement #3)
+      // 2. Multi-speed floating fluffy white clouds
       drawClouds(0.015);
 
-      // Deep Horizon mountains (Parallax Layer 0 - Slower - Improvement #2)
-      ctx.fillStyle = '#485460';
+      // --- PARALLAX BACKGROUND HILLS & VALLEYS ---
+      // Distant rolling meadow ridges (Parallax layer 0 / slow)
+      ctx.fillStyle = '#86efac'; // green-300 distant soft hills
       ctx.save();
-      ctx.globalAlpha = 0.28;
+      ctx.globalAlpha = 0.35;
       ctx.beginPath();
       ctx.moveTo(0, canvas.height);
-      ctx.lineTo(0, 310);
-      ctx.lineTo(80 - camX * 0.025, 220); // distant silhouetted peak
-      ctx.lineTo(180 - camX * 0.025, 270);
-      ctx.lineTo(270 - camX * 0.025, 240); // second far peak
-      ctx.lineTo(390 - camX * 0.025, 310);
-      ctx.lineTo(canvas.width, 310);
+      ctx.lineTo(0, 290);
+      ctx.quadraticCurveTo(200 - camX * 0.03, 240, 400 - camX * 0.03, 270);
+      ctx.quadraticCurveTo(800 - camX * 0.03, 220, 1200 - camX * 0.03, 280);
+      ctx.quadraticCurveTo(1600 - camX * 0.03, 230, 2000 - camX * 0.03, 260);
+      ctx.lineTo(canvas.width, 290);
       ctx.lineTo(canvas.width, canvas.height);
       ctx.closePath();
       ctx.fill();
       ctx.restore();
 
-      // Cerro de la Silla mountain silhouette! (Parallax Layer 1)
-      ctx.fillStyle = '#2c3e50';
+      // Midground layered ridges (Parallax layer 1)
+      ctx.fillStyle = '#4ade80'; // green-400 midground lush hills
+      ctx.save();
+      ctx.globalAlpha = 0.55;
       ctx.beginPath();
       ctx.moveTo(0, canvas.height);
       ctx.lineTo(0, 310);
-      ctx.lineTo(150 - camX * 0.08, 190); // Peak 1
-      ctx.lineTo(210 - camX * 0.08, 240); // Saddle
-      ctx.lineTo(310 - camX * 0.08, 200); // Peak 2
-      ctx.lineTo(450 - camX * 0.08, 310); // Base
-      ctx.lineTo(canvas.width, 310);
+      ctx.quadraticCurveTo(250 - camX * 0.08, 260, 500 - camX * 0.08, 290);
+      ctx.quadraticCurveTo(1000 - camX * 0.08, 250, 1500 - camX * 0.08, 300);
+      ctx.quadraticCurveTo(1900 - camX * 0.08, 260, canvas.width, 310);
       ctx.lineTo(canvas.width, canvas.height);
       ctx.closePath();
       ctx.fill();
+      ctx.restore();
 
-      // Flat highway asphalt grid in background (stress vibe)
-      ctx.fillStyle = '#78909c';
-      ctx.fillRect(0, 310, canvas.width, 40);
-      ctx.fillStyle = '#f1c40f'; // yellow lanes dashes
-      for (let x = 0; x < canvas.width + 120; x += 60) {
-        ctx.fillRect(x - (camX * 0.75) % 60, 328, 24, 3);
-      }
+      // --- THE THREE PRIMARY UNIQUE ZONES ---
 
-      // Highway billboard sign: "BIENVENIDOS A SANTIAGO NL"
-      const signX = 420 - camX * 0.5;
-      if (signX > -150 && signX < canvas.width + 150) {
-        ctx.fillStyle = '#37474f'; // metal supports
-        ctx.fillRect(signX + 60, 160, 6, 80);
+      // --- ZONE 1: THE LUSH PINE FOREST (0px to 800px along game world) ---
+      // Draw various procedural tall pines and rich thickets!
+      const drawPineTreeBg = (x: number, y: number, h: number, tone: 'dark' | 'bright') => {
+        const trX = x - camX * 0.25; // forest parallax
+        if (trX < -100 || trX > canvas.width + 100) return;
+
+        // Trunk
+        ctx.fillStyle = tone === 'dark' ? '#5c4033' : '#8b5a2b';
+        ctx.fillRect(trX - 3, y - h, 6, h);
+
+        // Triangular foliage layers
+        ctx.fillStyle = tone === 'dark' ? '#14532d' : '#166534'; // evergreen shades
         
-        ctx.fillStyle = '#1b5e20'; // board dark green
-        ctx.fillRect(signX, 100, 126, 60);
-        ctx.strokeStyle = '#ffffff';
+        ctx.beginPath();
+        // Layer 1 (Bottom)
+        ctx.moveTo(trX - 25, y - h + 15);
+        ctx.lineTo(trX, y - h - 15);
+        ctx.lineTo(trX + 25, y - h + 15);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.beginPath();
+        // Layer 2 (Middle)
+        ctx.moveTo(trX - 20, y - h - 5);
+        ctx.lineTo(trX, y - h - 35);
+        ctx.lineTo(trX + 20, y - h - 5);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.beginPath();
+        // Layer 3 (Top)
+        ctx.moveTo(trX - 14, y - h - 25);
+        ctx.lineTo(trX, y - h - 55);
+        ctx.lineTo(trX + 14, y - h - 25);
+        ctx.closePath();
+        ctx.fill();
+        
+        // Specular gold tip highlights from morning sun
+        ctx.fillStyle = tone === 'dark' ? '#15803d' : '#22c55e';
+        ctx.beginPath();
+        ctx.moveTo(trX - 4, y - h - 25);
+        ctx.lineTo(trX, y - h - 35);
+        ctx.lineTo(trX + 4, y - h - 25);
+        ctx.closePath();
+        ctx.fill();
+      };
+
+      // Draw background pines in left forest zone (x from 0 to 750)
+      const pineSeeds = [
+        { x: 50, h: 90, tone: 'dark' },
+        { x: 120, h: 120, tone: 'bright' },
+        { x: 180, h: 100, tone: 'dark' },
+        { x: 260, h: 110, tone: 'bright' },
+        { x: 340, h: 80, tone: 'dark' },
+        { x: 410, h: 130, tone: 'bright' },
+        { x: 490, h: 95, tone: 'dark' },
+        { x: 580, h: 125, tone: 'bright' },
+        { x: 670, h: 105, tone: 'dark' },
+        { x: 740, h: 115, tone: 'bright' }
+      ];
+      pineSeeds.forEach(p => drawPineTreeBg(p.x, 390, p.h, p.tone as 'dark' | 'bright'));
+
+
+      // --- ZONE 2: RAMP/PYRAMID MOUNTAIN AND WATERFALL (800px to 1600px) ---
+      // Draw a majestic gray rocky cliff wall, stepped pyramid steps on left, cascading white foaming waterfall, and ancient carved stone slabs.
+      const mountX = 990 - camX * 0.45; // mountainside parallax
+      if (mountX > -450 && mountX < canvas.width + 450) {
+        // Main basalt cliff body
+        ctx.fillStyle = '#94a3b8'; // slate-400 cool ancient stone gray
+        ctx.beginPath();
+        ctx.moveTo(mountX - 250, 420);
+        ctx.lineTo(mountX - 180, 240); // pyramidal step transition
+        ctx.lineTo(mountX - 70, 110); // high cliff edge
+        ctx.lineTo(mountX + 250, 110); // flat high ridge
+        ctx.lineTo(mountX + 350, 260); // right cliff edge
+        ctx.lineTo(mountX + 420, 420);
+        ctx.closePath();
+        ctx.fill();
+
+        // Left steps texture drawing (matching pyramid shape steps of background)
+        ctx.fillStyle = '#cbd5e1'; // slate-300 lighter highlight steps
+        for (let i = 0; i < 4; i++) {
+          const stepW = 35 + i * 8;
+          ctx.fillRect(mountX - 220 + i * 36, 310 - i * 45, stepW, 10);
+        }
+
+        // Draw animated cascading waterfall on the steps!
+        ctx.fillStyle = '#0284c7'; // deep cascade teal blue
+        ctx.fillRect(mountX - 110, 110, 40, 310);
+
+        // Animated white water cascades
+        ctx.fillStyle = '#ffffff';
+        ctx.save();
+        ctx.globalAlpha = 0.65 + Math.sin(Date.now() * 0.05) * 0.2;
+        for (let j = 0; j < 6; j++) {
+          const lineY = 110 + (Date.now() * 0.22 + j * 60) % 270;
+          ctx.fillRect(mountX - 105 + j * 6, lineY, 3, 40);
+        }
+        ctx.restore();
+
+        // Water mist splash splash at the mountain steps bottom base
+        ctx.fillStyle = 'rgba(240, 249, 255, 0.85)';
+        for (let s = 0; s < 4; s++) {
+          const bx = mountX - 115 + s * 11 + Math.sin(Date.now() * 0.015 + s) * 2;
+          ctx.beginPath();
+          ctx.arc(bx, 385, 10 + (s % 2) * 4, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // Deep basalt ridges shadows
+        ctx.strokeStyle = '#475569'; // slate-600 cracks
         ctx.lineWidth = 2.5;
-        ctx.strokeRect(signX, 100, 126, 60);
+        ctx.beginPath();
+        ctx.moveTo(mountX - 45, 110);
+        ctx.lineTo(mountX - 30, 230);
+        ctx.lineTo(mountX + 10, 310);
         
-        ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 9px monospace';
+        ctx.moveTo(mountX + 120, 110);
+        ctx.lineTo(mountX + 110, 260);
+        ctx.lineTo(mountX + 150, 395);
+        ctx.stroke();
+
+        // Ancient Carved Runes/Glyphs on the face of the stone ruins!
+        ctx.fillStyle = '#334155'; // slate-700 engraving color
+        ctx.font = 'bold 15px monospace';
         ctx.textAlign = 'center';
-        ctx.fillText('BIENVENIDOS A', signX + 63, 118);
-        ctx.fillStyle = '#f1c40f';
-        ctx.font = 'bold 12px monospace';
-        ctx.fillText('SANTIAGO NL', signX + 63, 134);
-        ctx.fillStyle = '#ffffff';
-        ctx.font = '7px monospace';
-        ctx.fillText('VILLA PRESTIGIADA', signX + 63, 149);
+        // Glyph block 1
+        ctx.fillText('𓀀', mountX + 30, 170);
+        ctx.fillText('𓃠', mountX + 70, 170);
+        ctx.fillText('𓅓', mountX + 30, 210);
+        // Glyph block 2
+        ctx.fillText('☼', mountX + 170, 190);
+        ctx.fillText('☾', mountX + 170, 220);
+
+        // Small primitive cave hut base
+        ctx.fillStyle = '#475569';
+        ctx.fillRect(mountX + 100, 315, 60, 45);
+        ctx.fillStyle = '#1e293b'; // dark doorway
+        ctx.fillRect(mountX + 118, 328, 24, 32);
       }
 
-      // Power towers / grid wires in background to show urban stress
-      ctx.strokeStyle = 'rgba(44, 62, 80, 0.4)';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(0, 150);
-      ctx.lineTo(canvas.width, 170);
-      ctx.moveTo(0, 165);
-      ctx.lineTo(canvas.width, 185);
-      ctx.stroke();
+
+      // --- ZONE 3: CLAY MEADOWS, RIVER & CACTI (1600px to 2400px) ---
+      // A gorgeous winding blue river that curves from bottom-center off to the right horizon
+      const riverXStart = 1550 - camX * 0.25;
+      if (riverXStart > -300 && riverXStart < canvas.width + 300) {
+        ctx.fillStyle = '#3b82f6'; // beautiful sky blue river winding
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(riverXStart, 420);
+        ctx.bezierCurveTo(riverXStart + 120, 400, riverXStart + 220, 310, riverXStart + 350, 280); // Winding curve
+        ctx.lineTo(riverXStart + 390, 280);
+        ctx.bezierCurveTo(riverXStart + 270, 310, riverXStart + 200, 400, riverXStart + 80, 420);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
+      }
+
+      // Draw gorgeous desert cardón cacti & agaves
+      const drawCactusBg = (x: number, y: number, size: number) => {
+        const cx = x - camX * 0.22; // cactus parallax
+        if (cx < -50 || cx > canvas.width + 50) return;
+
+        ctx.fillStyle = '#15803d'; // green-700
+        // Trunk
+        ctx.fillRect(cx - 3, y - size, 6, size);
+        // Left arm
+        ctx.fillRect(cx - 10, y - size + 10, 8, 3);
+        ctx.fillRect(cx - 10, y - size + 2, 3, 10);
+        // Right arm
+        ctx.fillRect(cx, y - size + 16, 11, 3);
+        ctx.fillRect(cx + 9, y - size + 6, 3, 11);
+      };
+
+      const drawAgaveBg = (x: number, y: number) => {
+        const ax = x - camX * 0.22;
+        if (ax < -40 || ax > canvas.width + 40) return;
+
+        ctx.fillStyle = '#166534'; // darker agave
+        ctx.beginPath();
+        ctx.moveTo(ax - 10, y);
+        ctx.lineTo(ax, y - 12);
+        ctx.lineTo(ax + 10, y);
+        ctx.lineTo(ax - 6, y);
+        ctx.lineTo(ax - 12, y - 6);
+        ctx.lineTo(ax + 12, y - 6);
+        ctx.closePath();
+        ctx.fill();
+      };
+
+      // Scatter background plants in right desert zone (1600 to 2400)
+      const desertPlants = [
+        { x: 1620, type: 'agave' },
+        { x: 1710, type: 'cactus', h: 32 },
+        { x: 1840, type: 'agave' },
+        { x: 1950, type: 'cactus', h: 26 },
+        { x: 2060, type: 'agave' },
+        { x: 2180, type: 'cactus', h: 36 },
+        { x: 2320, type: 'agave' }
+      ];
+      desertPlants.forEach(p => {
+        if (p.type === 'cactus') {
+          drawCactusBg(p.x, 390, p.h!);
+        } else {
+          drawAgaveBg(p.x, 390);
+        }
+      });
+
+      // Bottom grass margin boundary to ground them
+      ctx.fillStyle = '#22c55e'; // green-500
+      ctx.fillRect(0, 390, canvas.width, 3);
 
     } else if (theme === 'cave') {
       // Cascada Cola de Caballo theme (Waterfalls and pine sierra heights)
@@ -2557,7 +3314,7 @@ export default function GameCanvas({
       }
 
       // Skip rendering if block is out of camera viewport
-      if (bx < -tileSize || bx > 640) return;
+      if (bx < -tileSize || bx > GAME_WIDTH) return;
 
       if (b.type === 'ground') {
         // Theme-specific color parameters
@@ -2612,72 +3369,76 @@ export default function GameCanvas({
           ctx.fillRect(bx + 18, by + 22, 6, 6);
         }
       } else if (b.type === 'brick') {
-        // Redesigned to be Terrón de Adobe Artesanal / Cantera de la Sierra
-        // Color depends on level theme for natural, high-art coherence
-        let blockColor = '#b08d57'; // sandy clay adobe
-        let crackColor = '#735b34';
-        let mossColor = '#27ae60';
-        let highlightColor = '#d9c29e';
+        const customSpr = (window as any)._customSprites;
+        if (customSpr?.enabled && customSpr.block_pine) {
+          drawPixelSprite(ctx, bx, by, tileSize, tileSize, customSpr.block_pine, customSpr.palette);
+        } else {
+          // Redesigned to be Terrón de Adobe Artesanal / Cantera de la Sierra
+          // Color depends on level theme for natural, high-art coherence
+          let blockColor = '#b08d57'; // sandy clay adobe
+          let crackColor = '#735b34';
+          let mossColor = '#27ae60';
+          let highlightColor = '#d9c29e';
 
-        if (levelTheme === 'cave') {
-          blockColor = '#57606f'; // dark cavern slate
-          crackColor = '#2f3542';
-          mossColor = '#2ecc71';
-          highlightColor = '#a4b0be';
-        } else if (levelTheme === 'castle') {
-          blockColor = '#3d3d3d'; // mountain obsidian
-          crackColor = '#1e1e1e';
-          mossColor = '#ff4757'; // blazing volcanic ash moss
-          highlightColor = '#7f8c8d';
-        } else if (levelTheme === 'neon') {
-          blockColor = '#2d142c'; // vaporwave purple crystal
-          crackColor = '#1a081a';
-          mossColor = '#00fbff';
-          highlightColor = '#ff007f';
-        } else if (levelTheme === 'sierra' || levelTheme === 'desert') {
-          blockColor = '#a0522d'; // sienna canyon clay
-          crackColor = '#5c2d16';
-          mossColor = '#81ca10';
-          highlightColor = '#cd853f';
+          if (levelTheme === 'cave') {
+            blockColor = '#57606f'; // dark cavern slate
+            crackColor = '#2f3542';
+            mossColor = '#2ecc71';
+            highlightColor = '#a4b0be';
+          } else if (levelTheme === 'castle') {
+            blockColor = '#3d3d3d'; // mountain obsidian
+            crackColor = '#1e1e1e';
+            mossColor = '#ff4757'; // blazing volcanic ash moss
+            highlightColor = '#7f8c8d';
+          } else if (levelTheme === 'neon') {
+            blockColor = '#2d142c'; // vaporwave purple crystal
+            crackColor = '#1a081a';
+            mossColor = '#00fbff';
+            highlightColor = '#ff007f';
+          } else if (levelTheme === 'sierra' || levelTheme === 'desert') {
+            blockColor = '#a0522d'; // sienna canyon clay
+            crackColor = '#5c2d16';
+            mossColor = '#81ca10';
+            highlightColor = '#cd853f';
+          }
+
+          ctx.fillStyle = blockColor;
+          ctx.fillRect(bx, by, tileSize, tileSize);
+
+          // Adobe texture lines & irregular rocky grooves
+          ctx.strokeStyle = crackColor;
+          ctx.lineWidth = 1.5;
+          ctx.beginPath();
+          // Adobe horizontal layers
+          ctx.moveTo(bx, by + tileSize / 2);
+          ctx.lineTo(bx + tileSize, by + tileSize / 2);
+          ctx.moveTo(bx + 10, by);
+          ctx.lineTo(bx + 10, by + tileSize / 2);
+          ctx.moveTo(bx + 22, by + tileSize / 2);
+          ctx.lineTo(bx + 22, by + tileSize);
+          // Organic rocky cracks/grooves
+          ctx.moveTo(bx + 4, by + 6);
+          ctx.lineTo(bx + 8, by + 10);
+          ctx.moveTo(bx + 26, by + 22);
+          ctx.lineTo(bx + 28, by + 28);
+          ctx.stroke();
+
+          // 16-bit sunlit bevel highlight
+          ctx.fillStyle = highlightColor;
+          ctx.fillRect(bx + 1, by + 1, tileSize - 2, 2.5); // top bevel
+          ctx.fillRect(bx + 1, by + 1, 2.5, tileSize - 2); // left bevel
+
+          // Hand-crafted Sierra organic moss on block top!
+          ctx.fillStyle = mossColor;
+          ctx.fillRect(bx, by, 6, 3);
+          ctx.fillRect(bx + 10, by, 8, 4);
+          ctx.fillRect(bx + 13, by + 4, 3, 2);
+          ctx.fillRect(bx + 24, by, 8, 3);
+
+          ctx.strokeStyle = crackColor;
+          ctx.lineWidth = 1.8;
+          ctx.strokeRect(bx, by, tileSize, tileSize);
         }
-
-        ctx.fillStyle = blockColor;
-        ctx.fillRect(bx, by, tileSize, tileSize);
-
-        // Adobe texture lines & irregular rocky grooves
-        ctx.strokeStyle = crackColor;
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        // Adobe horizontal layers
-        ctx.moveTo(bx, by + tileSize / 2);
-        ctx.lineTo(bx + tileSize, by + tileSize / 2);
-        ctx.moveTo(bx + 10, by);
-        ctx.lineTo(bx + 10, by + tileSize / 2);
-        ctx.moveTo(bx + 22, by + tileSize / 2);
-        ctx.lineTo(bx + 22, by + tileSize);
-        // Organic rocky cracks/grooves
-        ctx.moveTo(bx + 4, by + 6);
-        ctx.lineTo(bx + 8, by + 10);
-        ctx.moveTo(bx + 26, by + 22);
-        ctx.lineTo(bx + 28, by + 28);
-        ctx.stroke();
-
-        // 16-bit sunlit bevel highlight
-        ctx.fillStyle = highlightColor;
-        ctx.fillRect(bx + 1, by + 1, tileSize - 2, 2.5); // top bevel
-        ctx.fillRect(bx + 1, by + 1, 2.5, tileSize - 2); // left bevel
-
-        // Hand-crafted Sierra organic moss on block top!
-        ctx.fillStyle = mossColor;
-        ctx.fillRect(bx, by, 6, 3);
-        ctx.fillRect(bx + 10, by, 8, 4);
-        ctx.fillRect(bx + 13, by + 4, 3, 2);
-        ctx.fillRect(bx + 24, by, 8, 3);
-
-        ctx.strokeStyle = crackColor;
-        ctx.lineWidth = 1.8;
-         ctx.strokeRect(bx, by, tileSize, tileSize);
-
       } else if (b.type === 'question') {
         // Redesigned to be a gorgeous sparkling Cofre de Cuarzo Rúnico (Ancient Nomad Mystic Quartz Vault)
         // Pulsing shiny colors reminiscent of high-altitude mountain gems
@@ -2928,6 +3689,154 @@ export default function GameCanvas({
         ctx.fillStyle = '#ffffff';
         ctx.textAlign = 'center';
         ctx.fillText('LIFT', bx + 16, by + 18);
+      } else if (b.type === 'carrot') {
+        // 🥕 PRETTY 16-BIT CARROT RENDER
+        // Hovering motion based on game timer!
+        const hover = Math.sin(Date.now() * 0.007 + b.x) * 4;
+        const cy = by + hover;
+
+        // Draw green leaves tuples
+        ctx.fillStyle = '#2ecc71';
+        ctx.beginPath();
+        ctx.ellipse(bx + 16, cy + 4, 3, 6, -Math.PI / 4, 0, Math.PI * 2);
+        ctx.ellipse(bx + 16, cy + 4, 3, 6, Math.PI / 4, 0, Math.PI * 2);
+        ctx.ellipse(bx + 16, cy + 1, 3, 7, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Draw juicy orange root body
+        ctx.fillStyle = '#ff7f50'; // coral orange root
+        ctx.beginPath();
+        ctx.moveTo(bx + 10, cy + 6);
+        ctx.quadraticCurveTo(bx + 16, cy + 30, bx + 16, cy + 30); // pointy tip
+        ctx.quadraticCurveTo(bx + 22, cy + 6, bx + 22, cy + 6);
+        ctx.closePath();
+        ctx.fill();
+
+        // Inner lighter orange specular highlight details
+        ctx.fillStyle = '#ffa502';
+        ctx.beginPath();
+        ctx.moveTo(bx + 12, cy + 7);
+        ctx.quadraticCurveTo(bx + 16, cy + 24, bx + 15, cy + 24);
+        ctx.quadraticCurveTo(bx + 17, cy + 7, bx + 17, cy + 7);
+        ctx.closePath();
+        ctx.fill();
+
+        // Dark orange root ridges lines
+        ctx.fillStyle = '#d35400';
+        ctx.fillRect(bx + 11, cy + 11, 4, 1.5);
+        ctx.fillRect(bx + 17, cy + 16, 4, 1.5);
+        ctx.fillRect(bx + 13, cy + 21, 5, 1.5);
+
+        // Glowing sweet halo around the carrot
+        ctx.strokeStyle = 'rgba(241, 196, 15, 0.45)';
+        ctx.setLineDash([2, 3]);
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(bx + 16, cy + 15, 16, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]); // restore solid lines
+        
+      } else if (b.type === 'coin') {
+        // 🪙 GORGEOUS 16-BIT SPINNING AND GLOWING GOLD COIN
+        const angle = (Date.now() * 0.009 + b.x) % (Math.PI * 2);
+        const spinScale = Math.abs(Math.cos(angle)); // Calculate horizontal spin scale
+        const hover = Math.sin(Date.now() * 0.005 + b.x * 2) * 5; // smooth hover
+        const cy = by + hover + 16;
+        const cx = bx + 16;
+        const radius = 10;
+
+        ctx.save();
+        // Shiny ambient glow
+        const glowGrad = ctx.createRadialGradient(cx, cy, 2, cx, cy, 18);
+        glowGrad.addColorStop(0, 'rgba(254, 240, 138, 0.4)'); // yellow-50
+        glowGrad.addColorStop(0.5, 'rgba(234, 179, 8, 0.12)'); // yellow-500
+        glowGrad.addColorStop(1, 'rgba(234, 179, 8, 0)');
+        ctx.fillStyle = glowGrad;
+        ctx.beginPath();
+        ctx.arc(cx, cy, 18, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Outer coin disk
+        ctx.fillStyle = '#b45309'; // amber brown shadow/edge
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, radius * spinScale, radius, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Main shiny face
+        ctx.fillStyle = '#facc15'; // yellow bright face
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, (radius - 1.5) * spinScale, radius - 1.5, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Inner coin core detail (classic retro ring)
+        ctx.strokeStyle = '#eab308'; // darker gold border
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, (radius - 3.5) * spinScale, radius - 3.5, 0, 0, Math.PI * 2);
+        ctx.stroke();
+
+        // Specular shining glare
+        ctx.fillStyle = '#ffffff';
+        ctx.beginPath();
+        ctx.ellipse(cx - 2 * spinScale, cy - 2, 1.8 * spinScale, 1.8, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.restore();
+
+      } else if (b.type === 'stable') {
+        // 🏡 RUSTIC HORSE STABLE WITH COAT AND HORSE COMPANION LOOKING OUT!
+        // Draws beautiful multi-block-sized wood post building on top of tile
+        const cy = by - 16; // make it 48px height!
+        const sh = 48;
+        const sw = 48;
+        const sbx = bx - 8; // center it horizontally
+
+        // Dark interior background
+        ctx.fillStyle = '#2c3e50';
+        ctx.fillRect(sbx + 4, cy + 10, sw - 8, sh - 10);
+
+        // Cute white/brown Horse head peeking out as an interactive preview!
+        ctx.fillStyle = '#a0522d'; // Horse snout
+        ctx.fillRect(sbx + 16, cy + 22, 16, 16);
+        ctx.fillStyle = '#cd853f'; // nose bridge
+        ctx.fillRect(sbx + 19, cy + 18, 10, 10);
+        ctx.fillStyle = '#ffffff'; // white star marking
+        ctx.fillRect(sbx + 23, cy + 18, 3, 4);
+        ctx.fillStyle = '#1e272e'; // friendly dark eye
+        ctx.fillRect(sbx + 22, cy + 22, 2, 2);
+        ctx.fillStyle = '#ffffff'; // white muzzle mouth tip
+        ctx.fillRect(sbx + 17, cy + 32, 14, 4);
+
+        // Wooden Columns Left/Right
+        ctx.fillStyle = '#5c3104'; // thick sienna log brown
+        ctx.fillRect(sbx, cy + 10, 6, sh - 10);
+        ctx.fillRect(sbx + sw - 6, cy + 10, 6, sh - 10);
+
+        // Thatched Yellow Hay Roof
+        ctx.fillStyle = '#d9a01b'; // golden thatch
+        ctx.beginPath();
+        ctx.moveTo(sbx - 4, cy + 10);
+        ctx.lineTo(sbx + sw / 2, cy - 4); // apex roof
+        ctx.lineTo(sbx + sw + 4, cy + 10);
+        ctx.closePath();
+        ctx.fill();
+
+        // Highlights/thatch textures on roof
+        ctx.strokeStyle = '#f1c40f';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(sbx + 4, cy + 7);
+        ctx.lineTo(sbx + sw / 2, cy + 1);
+        ctx.lineTo(sbx + sw - 4, cy + 7);
+        ctx.stroke();
+
+        // Wooden fence door cross bar
+        ctx.fillStyle = '#834c14';
+        ctx.fillRect(sbx + 4, cy + sh - 8, sw - 8, 4);
+        ctx.fillRect(sbx + 4, cy + sh - 14, sw - 8, 3);
+        ctx.strokeStyle = '#2c1404';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(sbx + 4, cy + sh - 14, sw - 8, 10);
       }
     });
   };
@@ -2997,6 +3906,79 @@ export default function GameCanvas({
       ctx.strokeStyle = '#2c3e50';
       ctx.lineWidth = 1;
       ctx.strokeRect(bx + 8, s.goalBarY, 32, 6);
+    }
+  };
+
+  const drawPixelSprite = (
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    matrix: number[][],
+    palette: string[],
+    facing: 'left' | 'right' = 'right',
+    animState: string = 'idle',
+    walkTick: number = 0,
+    animFrame: number = 0
+  ) => {
+    const rows = matrix.length;
+    const cols = matrix[0].length;
+    const pixelW = w / cols;
+    const pixelH = h / rows;
+
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const colorIndex = matrix[r][c];
+        if (colorIndex > 0 && palette[colorIndex] && palette[colorIndex] !== 'transparent') {
+          ctx.fillStyle = palette[colorIndex];
+          
+          let shiftX = 0;
+          let shiftY = 0;
+
+          // Biomechanical Skeletal Procedural Movement!
+          if (animState === 'walk') {
+            // Legs stepping & swinging (bottom 35% of the sprite)
+            if (r >= rows * 0.65) {
+              shiftX = Math.sin(walkTick * 0.28 + (r * 0.15)) * (pixelW * 1.5);
+              shiftY = Math.abs(Math.sin(walkTick * 0.28)) * -(pixelH * 1.0);
+            }
+            // Torso & arms swinging (middle 30% of the sprite)
+            else if (r >= rows * 0.35 && r < rows * 0.65) {
+              shiftX = Math.cos(walkTick * 0.28) * (pixelW * 0.5);
+              shiftY = Math.sin(walkTick * 0.28) * (pixelH * 0.4);
+            }
+            // Head slightly moving
+            else {
+              shiftX = Math.cos(walkTick * 0.28) * (pixelW * 0.25);
+              shiftY = Math.abs(Math.sin(walkTick * 0.14)) * -(pixelH * 0.4);
+            }
+          } else if (animState === 'jump') {
+            // Air compression
+            if (r >= rows * 0.65) {
+              shiftY = -pixelH * 1.2;
+            } else if (r < rows * 0.35) {
+              shiftY = pixelH * 0.4;
+            }
+          } else if (animState === 'idle') {
+            // Breath simulation (idle micro bobbing)
+            const breath = Math.sin(animFrame * 0.08);
+            if (r < rows * 0.4) {
+              shiftY = breath * (pixelH * 0.25);
+            } else if (r >= rows * 0.4 && r < rows * 0.7) {
+              shiftX = Math.sin(c * 0.5) * breath * (pixelW * 0.1);
+            }
+          } else if (animState === 'duck') {
+            // Squashed downward
+            if (r < rows * 0.5) {
+              shiftY = pixelH * 1.8;
+            }
+          }
+
+          const drawC = facing === 'left' ? (cols - 1 - c) : c;
+          ctx.fillRect(x + drawC * pixelW + shiftX, y + r * pixelH + shiftY, pixelW + 0.5, pixelH + 0.5);
+        }
+      }
     }
   };
 
@@ -3093,8 +4075,300 @@ export default function GameCanvas({
     ctx.scale(scaleX, scaleY);
     ctx.translate(-centerX, -bottomY);
 
+    if (s.mountedHorse) {
+      // Check if custom horse matrices are defined in SpriteLab
+      const customSpr = (window as any)._customSprites;
+      if (customSpr?.enabled && (customSpr.horse || customSpr.horse_idle || customSpr.horse_walk)) {
+        // Draw CUSTOM PIXEL-ART HORSE from user's laboratory export!
+        const animStateStr = s.pAnimState === 'walk' ? 'walk' : (s.pIsJumping ? 'jump' : 'idle');
+        const frameKey = `horse_${animStateStr}`;
+        const activeHorseMatrix = customSpr[frameKey] || customSpr.horse || customSpr.horse_idle;
+
+        const scale = 2.5; // matching user's coordinate scale preference!
+        const spriteBasePixelSize = 16 * scale;
+        const sk = customSpr.skeletons?.[frameKey];
+
+        let finalW = spriteBasePixelSize;
+        let finalH = spriteBasePixelSize;
+        let finalX = px;
+        let finalY = py;
+
+        if (sk) {
+          finalX = px - (sk.xOff * spriteBasePixelSize);
+          finalY = py - (sk.yOff * spriteBasePixelSize);
+        } else {
+          finalW = 16 * scale * 1.5;
+          finalH = 16 * scale * 1.5;
+          finalX = px - (finalW - pw) / 2;
+          finalY = py + ph - finalH + 11;
+        }
+
+        drawPixelSprite(
+          ctx,
+          finalX,
+          finalY,
+          finalW,
+          finalH,
+          activeHorseMatrix,
+          customSpr.palette,
+          facing,
+          s.pAnimState === 'walk' ? 'walk' : 'idle',
+          s.pWalkTick,
+          s.pAnimFrame
+        );
+
+        // Draw Lasso Rope ("el lienzo") over the custom horse with matching cowboy brown color
+        if (s.lassoState !== 'idle' && s.lassoLength > 0) {
+          ctx.strokeStyle = '#d2b48c'; // warm woven cowboy lasso hemp brown
+          ctx.lineWidth = 2.5;
+          ctx.lineCap = 'round';
+          ctx.beginPath();
+          
+          const startX = facing === 'right' ? px + pw + 8 : px - 8;
+          const startY = py + ph - 8;
+          
+          const tipX = px + pw / 2 + (facing === 'right' ? s.lassoLength : -s.lassoLength);
+          const tipY = py + 14;
+
+          const ctrlX = (startX + tipX) / 2;
+          const ctrlY = Math.min(startY, tipY) - 15 + Math.sin(Date.now() * 0.02) * 5;
+          
+          ctx.moveTo(startX, startY);
+          ctx.quadraticCurveTo(ctrlX, ctrlY, tipX, tipY);
+          ctx.stroke();
+
+          // Glowing lasso circle loop spinning!
+          ctx.strokeStyle = '#f1c40f'; // bright golden kinetic spark energy!
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          const spinRadius = 13 + Math.sin(Date.now() * 0.035) * 3.5;
+          ctx.arc(tipX, tipY, spinRadius, 0, Math.PI * 2);
+          ctx.stroke();
+
+          // Spin ticks particles
+          ctx.fillStyle = '#ffffff';
+          const angle = (Date.now() * 0.012) % (Math.PI * 2);
+          ctx.fillRect(tipX + Math.cos(angle) * spinRadius - 2, tipY + Math.sin(angle) * spinRadius - 2, 4, 4);
+          ctx.fillRect(tipX - Math.cos(angle) * spinRadius - 2, tipY - Math.sin(angle) * spinRadius - 2, 4, 4);
+        }
+
+        // Feed position translating player up into saddle height!
+        ctx.translate(0, -10);
+      } else {
+        // 🐴 DELIGHTFUL PROCEDURAL 16-BIT COMPANION HORSE DRAWING
+        const hx = px - 6;
+        const hy = py + 12; // align horse under rider
+        const hw = 30;
+        const hh = 18;
+
+        // Draw Horse legs (with trot/gallop rotation animation!)
+        ctx.fillStyle = '#5c3104'; // thick sienna brown lower legs
+        const legOffset1 = Math.sin(walkTick * 0.25) * 6;
+        const legOffset2 = -Math.sin(walkTick * 0.25) * 6;
+
+        // Back legs
+        ctx.fillRect(hx + 4 + legOffset1, hy + 18, 4, 8);
+        ctx.fillRect(hx + 10 + legOffset2, hy + 18, 4, 8);
+        // Front legs
+        ctx.fillRect(hx + hw - 10 + legOffset2, hy + 18, 4, 8);
+        ctx.fillRect(hx + hw - 4 + legOffset1, hy + 18, 4, 8);
+
+        // Hooves
+        ctx.fillStyle = '#f1c40f'; // golden energy hooves for magic Steed!
+        ctx.fillRect(hx + 4 + legOffset1, hy + 24, 4, 3);
+        ctx.fillRect(hx + 10 + legOffset2, hy + 24, 4, 3);
+        ctx.fillRect(hx + hw - 10 + legOffset2, hy + 24, 4, 3);
+        ctx.fillRect(hx + hw - 4 + legOffset1, hy + 24, 4, 3);
+
+        // Horse body coat
+        ctx.fillStyle = '#a0522d'; // Sienna brown coat
+        ctx.fillRect(hx, hy, hw, hh);
+
+        // Beautiful white dappled horse markings
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(hx + 6, hy + 4, 3, 3);
+        ctx.fillRect(hx + 16, hy + 8, 3, 3);
+        ctx.fillRect(hx + 22, hy + 3, 3, 3);
+
+        // Horse Head, Neck and beautiful white flowing Mane
+        ctx.fillStyle = '#a0522d';
+        if (facing === 'right') {
+          // Neck tilting up
+          ctx.fillRect(hx + hw - 8, hy - 12, 10, 16);
+          ctx.fillStyle = '#cd853f'; // lighter tan muzzle
+          ctx.fillRect(hx + hw - 3, hy - 16, 12, 10);
+          ctx.fillStyle = '#1e272e'; // dark horse eye
+          ctx.fillRect(hx + hw + 2, hy - 13, 2, 2);
+          
+          // Mane hairs flowing dynamically in wind
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(hx + hw - 12, hy - 11, 4, 16);
+          ctx.fillRect(hx + hw - 10, hy - 18, 5, 6); // ears
+        } else {
+          // Neck tilting up left
+          ctx.fillRect(hx - 2, hy - 12, 10, 16);
+          ctx.fillStyle = '#cd853f'; // lighter tan muzzle
+          ctx.fillRect(hx - 9, hy - 16, 12, 10);
+          ctx.fillStyle = '#1e272e'; // dark horse eye
+          ctx.fillRect(hx - 4, hy - 13, 2, 2);
+          
+          // Mane hairs left
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(hx + 8, hy - 11, 4, 16);
+          ctx.fillRect(hx + 5, hy - 18, 5, 6); // ears
+        }
+
+        // Leather Stirrups/Saddle harness
+        ctx.fillStyle = '#4a2711'; // saddle wood base
+        ctx.fillRect(hx + 6, hy - 2, 18, 3);
+        ctx.fillStyle = '#e1b12c'; // golden stirrup buckle
+        ctx.fillRect(hx + 14, hy + 1, 2, 10);
+        ctx.fillRect(hx + 12, hy + 11, 6, 2);
+
+        // Fluffy Tail sway
+        ctx.fillStyle = '#ffffff';
+        const tailSway = Math.sin(Date.now() * 0.008) * 3;
+        ctx.fillRect(facing === 'right' ? hx - 5 : hx + hw, hy + 2, 5, 12 + tailSway);
+
+        // Draw Lasso Rope ("el lienzo")
+        if (s.lassoState !== 'idle' && s.lassoLength > 0) {
+          ctx.strokeStyle = '#d2b48c'; // warm woven cowboy lasso hemp brown
+          ctx.lineWidth = 2.5;
+          ctx.lineCap = 'round';
+          ctx.beginPath();
+          
+          const startX = facing === 'right' ? hx + hw : hx;
+          const startY = hy - 4;
+          
+          const tipX = px + pw / 2 + (facing === 'right' ? s.lassoLength : -s.lassoLength);
+          const tipY = py + 14;
+
+          const ctrlX = (startX + tipX) / 2;
+          const ctrlY = Math.min(startY, tipY) - 15 + Math.sin(Date.now() * 0.02) * 5;
+          
+          ctx.moveTo(startX, startY);
+          ctx.quadraticCurveTo(ctrlX, ctrlY, tipX, tipY);
+          ctx.stroke();
+
+          // Glowing lasso circle loop spinning!
+          ctx.strokeStyle = '#f1c40f'; // bright golden kinetic spark energy!
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          const spinRadius = 13 + Math.sin(Date.now() * 0.035) * 3.5;
+          ctx.arc(tipX, tipY, spinRadius, 0, Math.PI * 2);
+          ctx.stroke();
+
+          // Spin ticks particles
+          ctx.fillStyle = '#ffffff';
+          const angle = (Date.now() * 0.012) % (Math.PI * 2);
+          ctx.fillRect(tipX + Math.cos(angle) * spinRadius - 2, tipY + Math.sin(angle) * spinRadius - 2, 4, 4);
+          ctx.fillRect(tipX - Math.cos(angle) * spinRadius - 2, tipY - Math.sin(angle) * spinRadius - 2, 4, 4);
+        }
+
+        // Translate the player up 12px so their torso and clothes sit elegantly in the horse saddle!
+        ctx.translate(0, -11);
+      }
+    }
+
     // Render by player type!
-    if (s.playerType === 'explorer') {
+    const customSpr = (window as any)._customSprites;
+    if (customSpr?.enabled) {
+      // Find the specific customized animation frame matrix
+      const animStateStr = s.pAnimState === 'walk' ? 'walk' : (s.pIsJumping ? 'jump' : (s.pIsDucking ? 'duck' : 'idle'));
+      const frameKey = `player_${animStateStr}`;
+      const activeMatrix = customSpr[frameKey] || customSpr.player;
+
+      if (activeMatrix) {
+        const scale = s.mountedHorse ? 2.5 : (customSpr.spriteScale || 2.5); // Prefer user scale 2.5x
+        const spriteBasePixelSize = 16 * scale;
+        const sk = customSpr.skeletons?.[frameKey];
+
+        let finalW = pw;
+        let finalH = ph;
+        let finalX = px;
+        let finalY = py;
+
+        if (sk) {
+          finalW = spriteBasePixelSize;
+          finalH = spriteBasePixelSize;
+          finalX = px - (sk.xOff * spriteBasePixelSize);
+          finalY = py - (sk.yOff * spriteBasePixelSize) + bodyYOffset;
+        } else {
+          finalW = pw * scale;
+          finalH = ph * scale;
+          finalX = px - (finalW - pw) / 2;
+          finalY = py - (finalH - ph) + bodyYOffset;
+        }
+
+        drawPixelSprite(
+          ctx,
+          finalX,
+          finalY,
+          finalW,
+          finalH,
+          activeMatrix,
+          customSpr.palette,
+          facing,
+          s.pAnimState === 'walk' ? 'walk' : (s.pIsJumping ? 'jump' : (s.pIsDucking ? 'duck' : 'idle')),
+          s.pWalkTick,
+          s.pAnimFrame
+        );
+      }
+    } else if (s.playerType === 'mario') {
+      // Draw pixel-accurate Super Mario World hand-crafted 16-bit SNES animations!
+      let activeMatrix = MARIO_SPRITES.idle;
+      const palette = s.pPowerUp === 'fire' ? MARIO_PALETTES.fire : MARIO_PALETTES.mario;
+
+      if (!s.pOnGround) {
+        // Airborne jump & fall dynamics
+        activeMatrix = s.pvy > 0 ? MARIO_SPRITES.fall : MARIO_SPRITES.jump;
+      } else if (s.pAnimState === 'duck') {
+        activeMatrix = MARIO_SPRITES.duck;
+      } else if (s.pAnimState === 'walk' || Math.abs(s.pvx) > 0.1) {
+        // Detect opposite tap skid (retro friction slide)
+        const isBraking = (facing === 'left' && s.pvx > 0.6) || (facing === 'right' && s.pvx < -0.6);
+        if (isBraking) {
+          activeMatrix = MARIO_SPRITES.skid;
+        } else if (Math.abs(s.pvx) > 4.5) {
+          activeMatrix = MARIO_SPRITES.run1;
+        } else {
+          // Walk cycle sequence (walk1, walk2, walk3)
+          const walkFrame = Math.floor(s.pWalkTick / 5) % 3;
+          activeMatrix = walkFrame === 0 ? MARIO_SPRITES.walk1 : (walkFrame === 1 ? MARIO_SPRITES.walk2 : MARIO_SPRITES.walk3);
+        }
+      } else {
+        activeMatrix = MARIO_SPRITES.idle;
+      }
+
+      // Height and width scaling to align Mario perfectly with the gameplay box
+      const scale = 1.7; // beautiful retro pixel size scaling
+      const finalW = 16 * scale;
+      const finalH = 18 * scale;
+      const finalX = px - (finalW - pw) / 2;
+      // Offset vertically to anchor his shoes neatly on the tile edges
+      const finalY = py - (finalH - ph) + bodyYOffset;
+
+      // Render custom pixel-art matrices onto Context2D on the fly
+      for (let r = 0; r < activeMatrix.length; r++) {
+        for (let c = 0; c < activeMatrix[r].length; c++) {
+          const colorIdx = activeMatrix[r][c];
+          if (colorIdx > 0 && colorIdx < palette.length) {
+            const pixelColor = palette[colorIdx];
+            ctx.fillStyle = pixelColor;
+            
+            // Flip columns horizontally if Mario is facing left
+            const colPos = facing === 'left' ? (activeMatrix[r].length - 1 - c) : c;
+            
+            ctx.fillRect(
+              Math.floor(finalX + colPos * scale),
+              Math.floor(finalY + r * scale),
+              Math.ceil(scale),
+              Math.ceil(scale)
+            );
+          }
+        }
+      }
+    } else if (s.playerType === 'explorer') {
       // 1. Nómada de la Sierra (Majestic mountain traveler with a colorful wool Poncho, woven Morral satchel, and leather headband with falcon feather!)
       // Woven Morral Satchel on back
       ctx.fillStyle = '#8d6e63'; // woven brown wool
@@ -3435,6 +4709,31 @@ export default function GameCanvas({
         return; // skip standard rendering
       }
 
+      const customSpr = (window as any)._customSprites;
+      if (customSpr?.enabled) {
+        const matrixName = en.type === 'champi' ? 'enemy_champi' : en.type === 'tortu' ? 'enemy_tortu' : en.type === 'volador' ? 'enemy_volador' : '';
+        if (matrixName && customSpr[matrixName]) {
+          const scale = 2.0; // Strictly 2.0x scale for enemies as requested
+          const finalW = en.width * scale;
+          const finalH = en.height * scale;
+          const finalX = ex - (finalW - en.width) / 2;
+          const finalY = ey - (finalH - en.height);
+          drawPixelSprite(
+            ctx,
+            finalX,
+            finalY,
+            finalW,
+            finalH,
+            customSpr[matrixName],
+            customSpr.palette,
+            en.facing,
+            'walk',
+            (Date.now() / 80) % 100
+          );
+          return;
+        }
+      }
+
       if (en.type === 'champi') {
         if (levelTheme === 'green') {
           // --- Carrito Estresado (Stressed red sedan car) ---
@@ -3464,25 +4763,52 @@ export default function GameCanvas({
           ctx.fillStyle = 'rgba(255,255,255,0.4)';
           ctx.fillRect(ex + en.width / 2 - 2, ey - 6 + tireOffset, 4, 4);
         } else {
-          // Flat mushroom walking (Mushroom monster Goomba-like)
-          // Procedural feet walking animation
+          // --- Ardilla de la Sierra de Santiago (Goomba regional replacement) ---
           const walkFactor = Math.sin(Date.now() * 0.015 + Number(en.id.charCodeAt(0) || 0));
-          ctx.fillStyle = '#2c3e50'; // charcoal shoes
-          ctx.fillRect(ex + 1, ey + en.height - 4 + (walkFactor > 0 ? -2 : 0), 6, 4);
-          ctx.fillRect(ex + en.width - 7, ey + en.height - 4 + (walkFactor < 0 ? -2 : 0), 6, 4);
-
-          ctx.fillStyle = '#d35400'; // dark brown dome
+          // Bushy squirrel tail curling up behind
+          ctx.fillStyle = '#d35400'; // rich orange-brown
           ctx.beginPath();
-          ctx.arc(ex + en.width / 2, ey + 10, en.width / 2, Math.PI, 0);
+          const tailX = en.facing === 'left' ? ex + en.width - 2 : ex + 2;
+          ctx.ellipse(tailX, ey + 12 + Math.sin(Date.now() * 0.01) * 2, 8, 14, en.facing === 'left' ? 0.3 : -0.3, 0, Math.PI * 2);
           ctx.fill();
-          
-          ctx.fillStyle = '#f39c12'; // pale stalk
-          ctx.fillRect(ex + 4, ey + 10, en.width - 8, en.height - 10);
+          ctx.fillStyle = '#e67e22'; // lighter tail highlights
+          ctx.beginPath();
+          ctx.ellipse(tailX + (en.facing === 'left' ? -2 : 2), ey + 10, 4, 10, en.facing === 'left' ? 0.3 : -0.3, 0, Math.PI * 2);
+          ctx.fill();
 
-          // Mean tiny white eyes
+          // Cute brown paws
+          ctx.fillStyle = '#8b4513';
+          ctx.fillRect(ex + 2, ey + en.height - 4 + (walkFactor > 0 ? -2 : 0), 6, 4);
+          ctx.fillRect(ex + en.width - 8, ey + en.height - 4 + (walkFactor < 0 ? -2 : 0), 6, 4);
+
+          // Chubby squirrel body
+          ctx.fillStyle = '#e67e22'; // lighter orange body
+          ctx.fillRect(ex + 3, ey + 4, en.width - 6, en.height - 8);
+
+          // Pointy ears
+          ctx.fillStyle = '#d35400';
+          ctx.beginPath();
+          ctx.moveTo(ex + 4, ey + 4);
+          ctx.lineTo(ex + 7, ey - 2);
+          ctx.lineTo(ex + 10, ey + 4);
+          ctx.moveTo(ex + en.width - 10, ey + 4);
+          ctx.lineTo(ex + en.width - 7, ey - 2);
+          ctx.lineTo(ex + en.width - 4, ey + 4);
+          ctx.fill();
+
+          // Chubby white belly patch
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(ex + 6, ey + 12, en.width - 12, en.height - 18);
+
+          // Angry squirrel eyes & little cheeks
           ctx.fillStyle = '#000000';
-          ctx.fillRect(ex + 6, ey + 10, 2, 5);
-          ctx.fillRect(ex + 16, ey + 10, 2, 5);
+          const eyeOffset = en.facing === 'left' ? -1 : 1;
+          ctx.fillRect(ex + 7 + eyeOffset, ey + 6, 3, 4);
+          ctx.fillRect(ex + 14 + eyeOffset, ey + 6, 3, 4);
+          // little rosy cheeks
+          ctx.fillStyle = '#ff7675';
+          ctx.fillRect(ex + 4, ey + 10, 2, 2);
+          ctx.fillRect(ex + en.width - 6, ey + 10, 2, 2);
         }
       } else if (en.type === 'tortu') {
         if (levelTheme === 'green') {
@@ -3516,23 +4842,41 @@ export default function GameCanvas({
           ctx.fillRect(ex + 3, ey + en.height - 4 + (taxiWheelOffset > 0 ? -1 : 1), 3, 3);
           ctx.fillRect(ex + en.width - 6, ey + en.height - 4 + (taxiWheelOffset < 0 ? -1 : 1), 3, 3);
         } else {
-          // Green Turtle shell walking (Koopa standard)
-          // Procedural boots walking animation
+          // --- Piña de Pino Puercoespín (Koopa regional replacement) ---
           const walkFactor = Math.sin(Date.now() * 0.015 + Number(en.id.charCodeAt(1) || 0));
-          ctx.fillStyle = '#f1c40f'; // yellow boots leg
+          
+          // Tiny paws walking
+          ctx.fillStyle = '#f1c40f'; // yellow paws
           ctx.fillRect(ex + 3, ey + en.height - 6 + (walkFactor > 0 ? -2 : 0), 4, 6);
           ctx.fillRect(ex + en.width - 7, ey + en.height - 6 + (walkFactor < 0 ? -2 : 0), 4, 6);
 
-          ctx.fillStyle = '#27ae60'; // Green dome shell
+          // Pinecone brown elliptical dome shell
+          ctx.fillStyle = '#5c3d21'; // deep pinecone brown
           ctx.beginPath();
           ctx.ellipse(ex + en.width / 2, ey + 16, 12, 10, 0, 0, Math.PI * 2);
           ctx.fill();
 
-          ctx.fillStyle = '#f1c40f'; // Yellow turtle neck & boots
-          ctx.beginPath();
-          const faceX = en.facing === 'left' ? ex + 3 : ex + en.width - 3;
-          ctx.arc(faceX, ey + 8, 4, 0, Math.PI*2);
-          ctx.fill();
+          // Spiky scales pattern on the pinecone shell (3 lines of sharp tiles)
+          ctx.fillStyle = '#8b5a2b'; // lighter scale tips
+          ctx.fillRect(ex + 6, ey + 10, 3, 3);
+          ctx.fillRect(ex + 14, ey + 10, 3, 3);
+          ctx.fillRect(ex + 10, ey + 14, 4, 4);
+          ctx.fillRect(ex + 6, ey + 19, 3, 3);
+          ctx.fillRect(ex + 14, ey + 19, 3, 3);
+
+          // Spiky pinecone pine needle tips sticking out of the oval!
+          ctx.fillStyle = '#2d6a4f'; // forest green sharp spines
+          ctx.fillRect(ex + en.width / 2 - 1, ey + 3, 2, 4); // top spine
+          ctx.fillRect(ex + 1, ey + 13, 3, 2); // left side spine
+          ctx.fillRect(ex + en.width - 4, ey + 13, 3, 2); // right side spine
+
+          // Pointy hedgehog-like snout with shiny nose at the front
+          ctx.fillStyle = '#cd853f'; // warm tan face
+          const snoutX = en.facing === 'left' ? ex - 2 : ex + en.width - 7;
+          ctx.fillRect(snoutX, ey + 12, 9, 8);
+          ctx.fillStyle = '#000000'; // black snout nose
+          const noseX = en.facing === 'left' ? ex - 3 : ex + en.width + 1;
+          ctx.fillRect(noseX, ey + 15, 2, 2);
         }
       } else if (en.type === 'volador') {
         if (levelTheme === 'green') {
@@ -3561,23 +4905,40 @@ export default function GameCanvas({
           ctx.arc(puffX, puffY, 3.5, 0, Math.PI * 2);
           ctx.fill();
         } else {
-          // Flying Red Koopa with cute flapping white wings!
-          ctx.fillStyle = '#c0392b'; // red shell
+          // --- Pájaro Carpintero (Flying Koopa regional replacement) ---
+          ctx.fillStyle = '#111111'; // dark feathers body
           ctx.beginPath();
-          ctx.ellipse(ex + en.width / 2, ey + 16, 12, 10, 0, 0, Math.PI * 2);
+          ctx.ellipse(ex + en.width / 2, ey + 16, 11, 8, 0, 0, Math.PI * 2);
           ctx.fill();
 
-          ctx.fillStyle = '#f1c40f'; // yellow neck
+          // Bright Red crest crown on head (Woodpecker signature)
+          ctx.fillStyle = '#e74c3c'; // radiant scarlet red
           ctx.beginPath();
-          const faceX = en.facing === 'left' ? ex + 3 : ex + en.width - 3;
-          ctx.arc(faceX, ey + 8, 4, 0, Math.PI * 2);
+          const headX = en.facing === 'left' ? ex + 3 : ex + en.width - 3;
+          ctx.arc(headX, ey + 8, 5, 0, Math.PI * 2);
+          ctx.fill();
+          // pointed feather crown lock
+          ctx.beginPath();
+          const crownX = en.facing === 'left' ? ex + 6 : ex + en.width - 6;
+          ctx.moveTo(crownX, ey + 4);
+          ctx.lineTo(crownX + (en.facing === 'left' ? 4 : -4), ey - 1);
+          ctx.lineTo(crownX + (en.facing === 'left' ? 2 : -2), ey + 5);
           ctx.fill();
 
-          // White fluttering wing on side
+          // Pointy yellow drill bill beak!
+          ctx.fillStyle = '#f1c40f'; // rich yellow bill
+          ctx.beginPath();
+          const billBaseX = en.facing === 'left' ? ex : ex + en.width;
+          ctx.moveTo(billBaseX, ey + 8);
+          ctx.lineTo(billBaseX + (en.facing === 'left' ? -6 : 6), ey + 10);
+          ctx.lineTo(billBaseX, ey + 12);
+          ctx.fill();
+
+          // Cute white fluttering bird wings
           ctx.fillStyle = '#ffffff';
           ctx.beginPath();
-          const wingOffset = Math.sin(Date.now() * 0.02) * 5;
-          ctx.ellipse(ex + en.width / 2 - 4, ey + 6 + wingOffset, 6, 4, -0.4, 0, Math.PI*2);
+          const wingOffset = Math.sin(Date.now() * 0.02) * 6;
+          ctx.ellipse(ex + en.width / 2 - 2, ey + 10 + wingOffset, 7, 5, -0.2, 0, Math.PI * 2);
           ctx.fill();
         }
       } else if (en.type === 'jefe') {
@@ -3922,7 +5283,7 @@ export default function GameCanvas({
     if (theme === 'sierra' && s.lightningTimer > 0) {
       const strobe = s.lightningTimer % 4 < 2 ? 0.38 : 0.18;
       ctx.fillStyle = `rgba(255, 255, 255, ${strobe})`;
-      ctx.fillRect(0, 0, 640, 480);
+      ctx.fillRect(0, 0, GAME_WIDTH, 480);
     }
 
     s.weatherParticles.forEach((p) => {
@@ -3988,6 +5349,29 @@ export default function GameCanvas({
           ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
           ctx.fill();
         }
+      } else if (p.type === 'leaf') {
+        ctx.fillStyle = p.color;
+        // draw elegant leaf shape
+        ctx.beginPath();
+        ctx.ellipse(p.x, p.y, p.size, p.size * 0.5, Math.sin(Date.now() * 0.01 + p.x) * 0.5, 0, Math.PI * 2);
+        ctx.fill();
+        // leaf stem line
+        ctx.strokeStyle = '#27ae60';
+        ctx.lineWidth = 0.5;
+        ctx.beginPath();
+        ctx.moveTo(p.x - p.size, p.y);
+        ctx.lineTo(p.x + p.size, p.y);
+        ctx.stroke();
+      } else if (p.type === 'pinecone') {
+        ctx.fillStyle = '#654321'; // dark pinecone core brown
+        ctx.beginPath();
+        ctx.ellipse(p.x, p.y, p.size * 0.65, p.size, 0.4, 0, Math.PI * 2);
+        ctx.fill();
+        // lighter cross-scale highlights
+        ctx.fillStyle = '#8b5a2b';
+        ctx.fillRect(p.x - 2, p.y - 3, 4, 1.5);
+        ctx.fillRect(p.x - 3, p.y, 6, 1.5);
+        ctx.fillRect(p.x - 2, p.y + 3, 4, 1.5);
       }
       ctx.restore();
     });
@@ -4064,6 +5448,36 @@ export default function GameCanvas({
       drawNomadHeart(ctx, hStartX + i * 16, 12, isFilled);
     }
 
+    // 5.5. Carrots Collected / Horse Companion status indicator
+    const carrotHUDX = 492;
+    ctx.save();
+    // Render mini pixel carrot in HUD
+    ctx.fillStyle = '#ff7f50';
+    ctx.beginPath();
+    ctx.moveTo(carrotHUDX, 11);
+    ctx.lineTo(carrotHUDX + 4, 21);
+    ctx.lineTo(carrotHUDX + 8, 11);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#2ecc71';
+    ctx.fillRect(carrotHUDX + 3, 8, 2, 3);
+
+    ctx.font = 'bold 10px "JetBrains Mono", "Fira Code", monospace';
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 2.5;
+    ctx.textAlign = 'left';
+    
+    if (s.mountedHorse) {
+      ctx.fillStyle = '#44bd32'; // bright green ON
+      ctx.strokeText('🐴 RIDE', carrotHUDX + 11, 21);
+      ctx.fillText('🐴 RIDE', carrotHUDX + 11, 21);
+    } else {
+      ctx.fillStyle = s.carrotsCollected >= 3 ? '#e1b12c' : '#ffa502';
+      ctx.strokeText(`${s.carrotsCollected}/3`, carrotHUDX + 11, 21);
+      ctx.fillText(`${s.carrotsCollected}/3`, carrotHUDX + 11, 21);
+    }
+    ctx.restore();
+
     // 6. Retro Chrono Timer
     const timeStr = String(Math.max(0, timeRemaining)).padStart(3, '0');
     ctx.fillStyle = '#ff4757';
@@ -4090,7 +5504,7 @@ export default function GameCanvas({
 
     setTouchTarget({ percentX, percentY });
 
-    const scaleX = 640 / rect.width;
+    const scaleX = GAME_WIDTH / rect.width;
     const gameTouchX = (clientX - rect.left) * scaleX;
 
     const s = stateRef.current;
@@ -4226,9 +5640,9 @@ export default function GameCanvas({
         <canvas
           id="retro-game-canvas"
           ref={canvasRef}
-          width={640}
+          width={GAME_WIDTH}
           height={480}
-          className="w-full h-auto aspect-[4/3] bg-black max-h-[480px]"
+          className={`w-full h-auto bg-black max-h-[480px] ${consoleTheme === 'snes' ? 'aspect-[5/3]' : 'aspect-[4/3]'}`}
         />
 
         {/* Floating Interactive Controller settings bar - moved to bottom and made smaller */}
@@ -4267,6 +5681,38 @@ export default function GameCanvas({
             title="Activar consola touch separada de la pantalla"
           >
             <span>📱 TACTIL: {consoleMode === 'touch' ? 'SI' : 'RETRO'}</span>
+          </button>
+
+          <button
+            id="mario-toggle-btn"
+            onClick={() => {
+              const s = stateRef.current;
+              if (s) {
+                if (s.playerType === 'mario') {
+                  let origType: 'explorer' | 'glasses' | 'truck' | 'bike' | 'catquad' | 'brocoliano' | 'mario' = 'explorer';
+                  if (levelId === 'level2') origType = 'glasses';
+                  else if (levelId === 'level3') origType = 'truck';
+                  else if (levelId === 'level4') origType = 'bike';
+                  else if (levelId === 'level5') origType = 'catquad';
+                  else if (levelId === 'level6') origType = 'brocoliano';
+                  s.playerType = origType;
+                  setActivePlayerType(origType);
+                  audio.playPowerDown();
+                } else {
+                  s.playerType = 'mario';
+                  setActivePlayerType('mario');
+                  audio.playPowerUp();
+                }
+              }
+            }}
+            className={`px-2 py-0.5 rounded border border-zinc-700/60 transition duration-150 cursor-pointer text-[10px] font-bold flex items-center gap-1 ${
+              activePlayerType === 'mario'
+                ? 'bg-red-950/40 border-red-500/80 text-red-300 hover:bg-red-950/60 font-black shadow-[0_0_10px_rgba(239,68,68,0.3)] animate-pulse'
+                : 'bg-zinc-900 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200'
+            }`}
+            title="Activar a Super Mario con físicas SNES en tiempo real (Tecla M)"
+          >
+            <span>🍄 MARIO: {activePlayerType === 'mario' ? 'SÍ' : 'NO'}</span>
           </button>
 
           <button

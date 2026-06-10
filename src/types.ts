@@ -34,7 +34,10 @@ export type BlockType =
   | 'castle-block' 
   | 'liftable' 
   | 'trampa'
-  | 'goal';
+  | 'goal'
+  | 'carrot'
+  | 'stable'
+  | 'coin';
 
 export interface Block {
   id: string;

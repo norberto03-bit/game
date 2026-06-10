@@ -4,6 +4,7 @@ import { audio } from './audio';
 import HUD from './components/HUD';
 import OverworldMap from './components/OverworldMap';
 import GameCanvas from './components/GameCanvas';
+import SpriteLab from './components/SpriteLab';
 import VirtualPad from './components/VirtualPad';
 import { Trophy, HelpCircle, ArrowRight, RefreshCw, Volume2, VolumeX, ShieldAlert } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -92,10 +93,14 @@ const INITIAL_LEVELS: LevelConfig[] = [
 export default function App() {
   const [gameMode, setGameMode] = useState<'menu' | 'map' | 'level' | 'gameover' | 'victory'>('menu');
   const [levels, setLevels] = useState<LevelConfig[]>(INITIAL_LEVELS);
+  const [menuCursor, setMenuCursor] = useState<number>(0); // 0 = 1 JUGADOR, 1 = 2 JUGADORES
+  const [playPlayersMode, setPlayPlayersMode] = useState<number>(1); // 1 o 2 players
   const [activeLevelId, setActiveLevelId] = useState<string | null>(null);
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [activeKeys, setActiveKeys] = useState<{ [key: string]: boolean }>({});
+  const [showSpriteLab, setShowSpriteLab] = useState<boolean>(false);
   const [consoleMode, setConsoleMode] = useState<'retro' | 'touch'>('retro');
+  const [consoleTheme, setConsoleTheme] = useState<'gameboy' | 'snes'>('snes');
 
   // Modern digital touchscreen controller states
   const [joystickKnob, setJoystickKnob] = useState({ x: 0, y: 0 });
@@ -121,6 +126,11 @@ export default function App() {
     window.addEventListener('touchstart', handleWindowFocus);
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Direct guard: if typing inside high resolution sprite creator textareas, ignore Gameboy bindings
+      if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) {
+        return;
+      }
+
       // Auto-focus window on key down to keep input connected
       window.focus();
 
@@ -132,7 +142,11 @@ export default function App() {
       // Keep key naming standard for local physics canvas
       let k = e.key;
       if (e.key === ' ' || e.key === 'Spacebar') k = 'Space'; // Space / Spacebar is JUMP
-      if (e.key.toLowerCase() === 'z') k = 'select'; // Z is SELECT (Platform/Trap Placement)
+      if (e.key.toLowerCase() === 'z') {
+        k = 'select'; // Z is SELECT (Platform/Trap Placement)
+        setShowSpriteLab(prev => !prev);
+        audio.playCoin();
+      }
       if (e.key.toLowerCase() === 'c' || e.key.toLowerCase() === 'y') k = 'c'; // Y / C is fire
       if (e.key.toLowerCase() === 'x' || e.key.toLowerCase() === 'v' || e.key.toLowerCase() === 'k') k = 'x'; // X / V / K is ice, avoiding conflict with movement 'd'
       if (e.key.toLowerCase() === 'b') k = 'b';
@@ -144,6 +158,11 @@ export default function App() {
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
+      // Guard: ignore if inside active input fields
+      if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) {
+        return;
+      }
+
       let k = e.key;
       if (e.key === ' ' || e.key === 'Spacebar') k = 'Space'; // Space / Spacebar is JUMP
       if (e.key.toLowerCase() === 'z') k = 'select'; // Z is SELECT (Platform/Trap Placement)
@@ -237,10 +256,12 @@ export default function App() {
     // If Castle boss cleared, play end sequence credits!
     if (activeLevelId === 'level6') {
       setTimeout(() => {
+        setActiveKeys({});
         setGameMode('victory');
       }, 500);
     } else {
       setTimeout(() => {
+        setActiveKeys({});
         setGameMode('map');
         audio.playMusic('map'); // restore map ambient music
       }, 500);
@@ -398,12 +419,34 @@ export default function App() {
     setActiveKeys((prev) => ({ ...prev, [key]: false }));
   };
 
-  // Keyboard START to begin game from introduction menu
+  // Keyboard START and Arrow navigation to select 1/2 players from introduction menu
   useEffect(() => {
-    if (activeKeys['start'] && gameMode === 'menu') {
-      handleStartGame();
+    if (gameMode !== 'menu') return;
+
+    const handleMenuNav = () => {
+      if (activeKeys['ArrowUp'] || activeKeys['w'] || activeKeys['ArrowLeft']) {
+        setMenuCursor(0);
+        audio.playCoin();
+      } else if (activeKeys['ArrowDown'] || activeKeys['s'] || activeKeys['ArrowRight']) {
+        setMenuCursor(1);
+        audio.playCoin();
+      } else if (activeKeys['start'] || activeKeys['Enter'] || activeKeys['Space'] || activeKeys[' ']) {
+        setPlayPlayersMode(menuCursor === 0 ? 1 : 2);
+        handleStartGame();
+      }
+    };
+
+    const timeNow = Date.now();
+    const lastPressTime = (window as any)._lastMenuNavTime || 0;
+    const hasNavKey = activeKeys['ArrowUp'] || activeKeys['w'] || activeKeys['ArrowLeft'] ||
+                      activeKeys['ArrowDown'] || activeKeys['s'] || activeKeys['ArrowRight'] ||
+                      activeKeys['start'] || activeKeys['Enter'] || activeKeys['Space'] || activeKeys[' '];
+
+    if (hasNavKey && timeNow - lastPressTime > 250) {
+      (window as any)._lastMenuNavTime = timeNow;
+      handleMenuNav();
     }
-  }, [activeKeys, gameMode]);
+  }, [activeKeys, gameMode, menuCursor]);
 
   const activeLevelData = levels.find((l) => l.id === activeLevelId);
 
@@ -418,41 +461,126 @@ export default function App() {
       <div className="absolute top-12 left-10 w-28 h-12 bg-white/5 rounded-full opacity-40 blur-[2px] -z-40 pointer-events-none animate-pulse"></div>
       <div className="absolute bottom-24 right-10 w-40 h-16 bg-white/5 rounded-full opacity-30 blur-[2px] -z-40 pointer-events-none animate-pulse"></div>
 
-      {/* Title logo hovering above the Gameboy */}
-      <div className="text-center mb-4 select-none flex flex-col items-center">
+      {/* Title logo hovering above the Gameboy/SNES */}
+      <div className="text-center mb-1.5 select-none flex flex-col items-center">
         <h1 className="text-xl sm:text-2xl font-black tracking-widest text-[#F8B800] drop-shadow-[0_2px_0_rgba(0,0,0,0.8)] font-sans uppercase">
-          ⚔️ SIERRA PORTABLE CONSOLE
+          ⚔️ {consoleTheme === 'snes' ? 'SÚPER NINTENDO RETRO' : 'SIERRA PORTABLE CONSOLE'}
         </h1>
         <p className="text-[10px] text-zinc-400 font-extrabold uppercase tracking-widest leading-none mt-1">
-          NÓMADA QUEST 32 · 16-BIT COLOR DISPLAY
+          {consoleTheme === 'snes' ? 'NÓMADA QUEST · EDICIÓN ULTRA 16-BIT' : 'NÓMADA QUEST 32 · 16-BIT COLOR DISPLAY'}
         </p>
       </div>
 
-      {/* Physical Handheld GAME BOY Housing */}
-      <div className="w-full max-w-[440px] sm:max-w-[480px] md:max-w-[500px] gameboy-chassis border-4 border-black/40 rounded-[28px] rounded-br-[110px] p-4 sm:p-6 flex flex-col gap-5 relative select-none">
+      {/* Interactive Hardware Style Switcher */}
+      <div className="flex bg-black/50 p-1 rounded-full border border-white/10 gap-2 mb-3 select-none self-center shadow-lg">
+        <button
+          onClick={() => {
+            setConsoleTheme('gameboy');
+            audio.playCoin();
+          }}
+          className={`px-3.5 py-1 rounded-full text-[8.5px] font-black uppercase transition-all duration-200 cursor-pointer flex items-center gap-1.5 ${
+            consoleTheme === 'gameboy'
+              ? 'bg-zinc-700 text-white font-black shadow-[0_0_8px_rgba(255,255,255,0.25)]'
+              : 'text-zinc-400 hover:text-zinc-200'
+          }`}
+        >
+          <span>👾</span> MODO GAME BOY
+        </button>
+        <button
+          onClick={() => {
+            setConsoleTheme('snes');
+            audio.playPowerUp();
+          }}
+          className={`px-3.5 py-1 rounded-full text-[8.5px] font-black uppercase transition-all duration-200 cursor-pointer flex items-center gap-1.5 ${
+            consoleTheme === 'snes'
+              ? 'bg-purple-600 text-white font-black shadow-[0_0_12px_rgba(168,85,247,0.45)] border border-purple-400/30'
+              : 'text-zinc-400 hover:text-zinc-200'
+          }`}
+        >
+          <span>🏰</span> MODO SNES 16-BIT
+        </button>
+      </div>
+
+      {/* Immersive Studio Workspace Frame */}
+      <div className="flex flex-col lg:flex-row items-center lg:items-start justify-center gap-6 w-full max-w-6xl">
+        {/* Physical Handheld Housing (Game Boy or SNES 16-Bit) */}
+        <div className={`w-full ${
+          consoleTheme === 'snes' 
+            ? 'max-w-[500px] sm:max-w-[550px] md:max-w-[600px] snes-chassis rounded-[32px] rounded-br-[70px]' 
+            : 'max-w-[440px] sm:max-w-[480px] md:max-w-[500px] gameboy-chassis rounded-[28px] rounded-br-[110px]'
+        } border-4 border-black/50 p-4 sm:p-5 flex flex-col gap-4 relative select-none transition-all duration-300 shadow-[2px_15px_40px_rgba(0,0,0,0.8)]`}>
         
-        {/* DMG-01 Battery / Heat slot indents on top chassis */}
-        <div className="flex justify-center gap-10 w-full -mt-2 opacity-30 select-none pb-1.5">
-          <div className="w-20 h-1 bg-zinc-800 rounded-full" />
-          <div className="w-20 h-1 bg-zinc-800 rounded-full" />
-        </div>
+        {/* Top Console Details (Game Boy lines or SNES Switches) */}
+        {consoleTheme === 'snes' ? (
+          <div className="flex justify-between items-center w-full -mt-2.5 pb-2 px-4 border-b border-black/10 select-none">
+            {/* Power Slider */}
+            <div className="flex items-center gap-1">
+              <span className="text-[6.5px] font-mono text-zinc-500 font-extrabold uppercase">POWER</span>
+              <div className="w-9 h-4 bg-zinc-800 rounded-sm p-0.5 border border-black relative cursor-pointer" onClick={() => audio.playCoin()}>
+                <div className="w-4 h-full bg-zinc-400 rounded-xs shadow border border-zinc-600 absolute left-0.5 hover:bg-zinc-300" />
+              </div>
+            </div>
+            {/* Widescreen LED badge */}
+            <div className="text-[7px] font-black text-purple-900 bg-purple-950/20 border border-purple-900/30 rounded px-2 tracking-widest uppercase py-0.5">
+              Super 16-Bit Display
+            </div>
+            {/* Reset Button */}
+            <div className="flex items-center gap-1">
+              <button 
+                onClick={() => {
+                  audio.playShoot();
+                  window.location.reload();
+                }}
+                className="w-7 h-4 bg-blue-700/80 hover:bg-blue-600 active:scale-90 rounded border border-black text-[6px] font-sans font-black text-white flex items-center justify-center uppercase shadow"
+              >
+                RESET
+              </button>
+            </div>
+          </div>
+        ) : (
+          /* DMG-01 Battery / Heat slot indents on top chassis */
+          <div className="flex justify-center gap-10 w-full -mt-2 opacity-30 select-none pb-1.5">
+            <div className="w-20 h-1 bg-zinc-800 rounded-full" />
+            <div className="w-20 h-1 bg-zinc-800 rounded-full" />
+          </div>
+        )}
 
         {/* --- SECTION 1: Dark Glass Screen Bezel --- */}
-        <div className="gameboy-bezel rounded-lg p-3 pt-2 pb-8 border-4 border-black/85 flex flex-col gap-3 relative select-none">
+        <div className={`${
+          consoleTheme === 'snes' ? 'snes-bezel' : 'gameboy-bezel'
+        } rounded-lg p-3 pt-2 pb-8 border-4 border-black/85 flex flex-col gap-3 relative select-none transition-all duration-300 shadow-[inset_0_2px_8px_rgba(0,0,0,0.8)]`}>
           
           {/* Bezel Double Stripe details */}
           <div className="flex justify-between items-center w-full px-2 border-b-2 border-dashed border-zinc-500/20 pb-1.5 select-none font-mono">
-            <span className="h-[3px] w-12 sm:w-16 bg-[#ae2240] rounded-full inline-block" />
-            <span className="text-[9px] sm:text-[10px] font-black tracking-widest text-[#cfcfcf] select-none text-center">
-              DOT MATRIX WITH STEREO SOUND
-            </span>
-            <span className="h-[3px] w-12 sm:w-16 bg-[#1d4a8e] rounded-full inline-block" />
+            {consoleTheme === 'snes' ? (
+              <>
+                <span className="h-[3px] w-12 sm:w-16 bg-[#10ac84] rounded-full inline-block" />
+                <span className="text-[9px] sm:text-[10px] font-black tracking-widest text-zinc-350 select-none text-center uppercase">
+                  ⭐ SUPER NINTENDO 16-BIT RETRO DISPLAY ⭐
+                </span>
+                <span className="h-[3px] w-12 sm:w-16 bg-[#c0392b] rounded-full inline-block" />
+              </>
+            ) : (
+              <>
+                <span className="h-[3px] w-12 sm:w-16 bg-[#ae2240] rounded-full inline-block" />
+                <span className="text-[9px] sm:text-[10px] font-black tracking-widest text-[#cfcfcf] select-none text-center">
+                  DOT MATRIX WITH STEREO SOUND
+                </span>
+                <span className="h-[3px] w-12 sm:w-16 bg-[#1d4a8e] rounded-full inline-block" />
+              </>
+            )}
           </div>
 
-          {/* Glowing Red BATTERY Led indicator */}
+          {/* Glowing Red / Green Led indicator */}
           <div className="absolute left-2.5 top-[50%] -translate-y-5 flex flex-col items-center gap-0.5 z-10 select-none">
-            <span className={`w-3 h-3 rounded-full bg-red-600 border border-black/60 shadow-[0_0_8px_#ef4444] ${gameMode === 'level' ? 'animate-pulse bg-red-500' : ''}`} />
-            <span className="text-[6px] font-black text-zinc-400 tracking-tighter uppercase font-mono">BATTERY</span>
+            <span className={`w-3 h-3 rounded-full ${
+              consoleTheme === 'snes' 
+                ? `bg-emerald-500 border border-black/60 shadow-[0_0_8px_#10ac84] ${gameMode === 'level' ? 'animate-pulse bg-emerald-400' : ''}`
+                : `bg-red-600 border border-black/60 shadow-[0_0_8px_#ef4444] ${gameMode === 'level' ? 'animate-pulse bg-red-500' : ''}`
+            }`} />
+            <span className="text-[5.5px] font-black text-zinc-400 tracking-tighter uppercase font-mono font-bold">
+              {consoleTheme === 'snes' ? 'POWER' : 'BATTERY'}
+            </span>
           </div>
 
           {/* Actual Screen Port Viewport inside Bezel */}
@@ -473,40 +601,90 @@ export default function App() {
                     initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
                     exit={{ opacity: 0, scale: 0.95 }}
-                    className="w-full h-full bg-[#f8d8a0] p-4 text-center text-black flex flex-col justify-between"
+                    className="w-full h-full bg-[#f8d8a0] p-4 text-center text-black flex flex-col justify-between border-8 border-black font-sans relative"
                   >
-                    <div className="mb-2 flex flex-col items-center mt-1">
+                    {/* Retro background landscape decoration outlines */}
+                    <div className="absolute inset-0 opacity-10 pointer-events-none flex justify-between items-end p-2 select-none">
+                      <span className="text-4xl text-black">🌲</span>
+                      <span className="text-4xl text-black">🐿️</span>
+                      <span className="text-4xl text-black">🌲</span>
+                    </div>
+
+                    <div className="mb-2 flex flex-col items-center mt-2">
                       <div className="text-[9px] font-black tracking-widest text-[#d85000] mb-0.5 uppercase">
-                        ⭐ LANDSCAPE PLATFORM ADVENTURE ⭐
+                        🌲 SIERRA DE SANTIAGO, NL 🌲
                       </div>
-                      <h1 className="text-xl sm:text-2xl font-black tracking-tighter text-black uppercase leading-none border-b-2 border-black pb-1.5 retro-shadow">
-                        SIERRA COLOR
+                      <h1 className="text-2xl sm:text-3xl font-black tracking-tighter text-black uppercase leading-none border-b-4 border-black pb-1 mb-1 shadow-sm">
+                        NÓMADA QUEST
                       </h1>
-                      <div className="bg-black text-[#f8b800] font-black px-3 py-1 font-mono text-[8px] mt-2 uppercase tracking-wider">
-                        MODO GAME BOY PORTABLE
-                      </div>
+                      <span className="text-[10px] font-black tracking-widest text-[#5c3c10] uppercase">
+                        Saga de Potrero Redondo
+                      </span>
                     </div>
 
-                    {/* Compact Promotional card summary */}
-                    <div className="bg-white border-2 border-black p-2 text-left text-[9px] leading-tight font-sans font-semibold">
-                      <span className="font-extrabold text-[#d85000] uppercase block border-b border-black/10 pb-0.5 mb-1">🎮 CONTROLES CONECTADOS:</span>
-                      <ul className="list-disc list-inside text-black pl-0.5 space-y-0.5">
-                        <li>D-Pad / Flechas para Mover tu Personaje.</li>
-                        <li>Botón [A] / Espacio para Saltar Alto.</li>
-                        <li>Botones [X / Y] para Habilidades de Hielo y Fuego.</li>
-                        <li>Botón [B] / Shift para súper saltos y levantar.</li>
-                        <li>Botón [SELECT] para Colocar Trampa Plataforma.</li>
-                      </ul>
-                    </div>
-
-                    <div className="mb-1">
-                      <button
-                        id="start-quest-btn"
-                        onClick={handleStartGame}
-                        className="w-full py-2 px-4 bg-black text-white border-2 border-white hover:border-[#f8b800] font-black tracking-widest text-xs uppercase active:translate-y-0.5 shadow cursor-pointer flex items-center justify-center gap-1.5"
+                    {/* Classic Mario style 1 or 2 player option menu list */}
+                    <div className="flex flex-col gap-2.5 my-4 px-2 select-none">
+                      {/* Option 1 */}
+                      <div
+                        onClick={() => {
+                          setMenuCursor(0);
+                          setPlayPlayersMode(1);
+                          audio.playPowerUp();
+                          handleStartGame();
+                        }}
+                        className={`py-2 px-3 border-4 border-black text-xs font-black uppercase text-left cursor-pointer flex items-center justify-between transition-all ${
+                          menuCursor === 0
+                            ? 'bg-black text-white translate-x-1 scale-[1.02] shadow-md'
+                            : 'bg-white text-black hover:bg-zinc-100 shadow'
+                        }`}
                       >
-                        🚀 START AVENTURA
-                      </button>
+                        <span className="flex items-center gap-1.5">
+                          {menuCursor === 0 ? '🍄' : '⬜'} 1 JUGADOR
+                        </span>
+                        <span className="text-[8px] font-mono opacity-80">NÓMADA SOLITARIO</span>
+                      </div>
+
+                      {/* Option 2 */}
+                      <div
+                        onClick={() => {
+                          setMenuCursor(1);
+                          setPlayPlayersMode(2);
+                          audio.playPowerUp();
+                          handleStartGame();
+                        }}
+                        className={`py-2 px-3 border-4 border-black text-xs font-black uppercase text-left cursor-pointer flex items-center justify-between transition-all ${
+                          menuCursor === 1
+                            ? 'bg-black text-white translate-x-1 scale-[1.02] shadow-md'
+                            : 'bg-white text-black hover:bg-zinc-100 shadow'
+                        }`}
+                      >
+                        <span className="flex items-center gap-1.5">
+                          {menuCursor === 1 ? '🍄' : '⬜'} 2 JUGADORES
+                        </span>
+                        <span className="text-[8px] font-mono opacity-80">COOPERATIVO SANTIAGO</span>
+                      </div>
+
+                      {/* Co-op mode detailed hint */}
+                      {menuCursor === 1 && (
+                        <motion.div
+                          initial={{ opacity: 0, y: -2 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          className="text-[8px] leading-tight text-center text-[#d85000] font-bold uppercase mt-1 animate-pulse"
+                        >
+                          📢 COMPARTIR PANTALLA: jugador 2 usa los controles táctiles del chasis
+                        </motion.div>
+                      )}
+                    </div>
+
+                    {/* Highly reduced controls summary as a helper footer bar */}
+                    <div className="bg-black/5 p-1.5 border-2 border-black/30 rounded text-[8px] leading-tight text-zinc-800 font-extrabold flex justify-around uppercase gap-1 select-none">
+                      <span>🕹️ Flechas / D-Pad</span>
+                      <span>⭐ A / Espacio: Botón A</span>
+                      <span>🔥 Fuego/Hielo: Y / X</span>
+                    </div>
+
+                    <div className="text-[8px] font-black text-zinc-500 text-center uppercase mt-1">
+                      Presiona START o ESPACIO para avanzar
                     </div>
                   </motion.div>
                 )}
@@ -556,6 +734,7 @@ export default function App() {
                       }}
                       consoleMode={consoleMode}
                       onToggleConsoleMode={() => setConsoleMode(prev => prev === 'retro' ? 'touch' : 'retro')}
+                      consoleTheme={consoleTheme}
                     />
                   </motion.div>
                 )}
@@ -930,12 +1109,16 @@ export default function App() {
                 <div className="w-1.5 h-12 bg-zinc-700/20 rounded-full" />
               </div>
 
-              {/* C: Tactical maroon Buttons on right A/B/X/Y */}
+              {/* C: Tactical Buttons on right A/B/X/Y */}
               <div className="col-span-5 flex items-center justify-center py-1">
                 <div className="relative w-32 h-32 flex items-center justify-center p-1 bg-zinc-500/10 rounded-full border border-black/15 shadow-inner scale-95 sm:scale-100">
                   
                   {/* Diagonal Oval plate frame */}
-                  <div className="absolute w-28 h-20 -rotate-[30deg] bg-zinc-300/40 border-2 border-zinc-400 rounded-full -z-10 shadow-inner" />
+                  {consoleTheme === 'snes' ? (
+                    <div className="absolute w-[114px] h-[114px] bg-[#d1d3d8] border-2 border-[#b0b2ba] rounded-full -z-10 shadow-[inset_0_2px_4px_rgba(0,0,0,0.3)]" />
+                  ) : (
+                    <div className="absolute w-28 h-20 -rotate-[30deg] bg-zinc-300/40 border-2 border-zinc-400 rounded-full -z-10 shadow-inner" />
+                  )}
 
                   {/* Y Button: (Disparo Fuego - C) */}
                   <div className="absolute left-[3px] top-[40px] flex flex-col items-center">
@@ -946,8 +1129,10 @@ export default function App() {
                       onTouchStart={(e) => handleTouchStart('c', e)}
                       onTouchEnd={(e) => handleTouchEnd('c', e)}
                       onTouchCancel={(e) => handleTouchEnd('c', e)}
-                      className={`w-9 h-9 rounded-full bg-[#f85000] hover:bg-orange-500 border-2 border-black select-none text-white font-black text-xs cursor-pointer flex items-center justify-center tracking-tighter touch-none ${
-                        activeKeys['c'] ? 'gameboy-btn-tactile-active' : 'gameboy-btn-tactile'
+                      className={`w-9 h-9 rounded-full border-2 border-black select-none text-white font-black text-xs cursor-pointer flex items-center justify-center tracking-tighter touch-none transition-all duration-75 ${
+                        consoleTheme === 'snes'
+                          ? (activeKeys['c'] ? 'snes-btn-yellow-active text-amber-900 border-yellow-600' : 'snes-btn-yellow text-amber-950 border-yellow-700')
+                          : (activeKeys['c'] ? 'gameboy-btn-tactile-active bg-[#f85000] hover:bg-orange-500' : 'gameboy-btn-tactile bg-[#f85000] hover:bg-orange-500')
                       }`}
                       title="Fuego [Y] / Disparo C"
                     >
@@ -965,8 +1150,10 @@ export default function App() {
                       onTouchStart={(e) => handleTouchStart('x', e)}
                       onTouchEnd={(e) => handleTouchEnd('x', e)}
                       onTouchCancel={(e) => handleTouchEnd('x', e)}
-                      className={`w-9 h-9 rounded-full bg-cyan-600 hover:bg-cyan-500 border-2 border-black select-none text-white font-black text-xs cursor-pointer flex items-center justify-center tracking-tighter touch-none ${
-                        activeKeys['x'] ? 'gameboy-btn-tactile-active' : 'gameboy-btn-tactile'
+                      className={`w-9 h-9 rounded-full border-2 border-black select-none text-white font-black text-xs cursor-pointer flex items-center justify-center tracking-tighter touch-none transition-all duration-75 ${
+                        consoleTheme === 'snes'
+                          ? (activeKeys['x'] ? 'snes-btn-blue-active text-blue-100 border-blue-900' : 'snes-btn-blue text-white border-blue-950')
+                          : (activeKeys['x'] ? 'gameboy-btn-tactile-active bg-cyan-600 hover:bg-cyan-500' : 'gameboy-btn-tactile bg-cyan-600 hover:bg-cyan-500')
                       }`}
                       title="Hielo [X] / Disparo X"
                     >
@@ -984,8 +1171,10 @@ export default function App() {
                       onTouchStart={(e) => handleTouchStart('b', e)}
                       onTouchEnd={(e) => handleTouchEnd('b', e)}
                       onTouchCancel={(e) => handleTouchEnd('b', e)}
-                      className={`w-9 h-9 rounded-full bg-[#ae2240] hover:bg-[#8e192c] border-2 border-black select-none text-white font-black text-xs cursor-pointer flex items-center justify-center tracking-tighter touch-none ${
-                        activeKeys['b'] ? 'gameboy-btn-tactile-active' : 'gameboy-btn-tactile'
+                      className={`w-9 h-9 rounded-full border-2 border-black select-none text-white font-black text-xs cursor-pointer flex items-center justify-center tracking-tighter touch-none transition-all duration-75 ${
+                        consoleTheme === 'snes'
+                          ? (activeKeys['b'] ? 'snes-btn-red-active text-red-100 border-red-900' : 'snes-btn-red text-white border-red-950')
+                          : (activeKeys['b'] ? 'gameboy-btn-tactile-active bg-[#ae2240] hover:bg-[#8e192c]' : 'gameboy-btn-tactile bg-[#ae2240] hover:bg-[#8e192c]')
                       }`}
                       title="Turbo [B]"
                     >
@@ -1003,8 +1192,10 @@ export default function App() {
                       onTouchStart={(e) => handleTouchStart('Space', e)}
                       onTouchEnd={(e) => handleTouchEnd('Space', e)}
                       onTouchCancel={(e) => handleTouchEnd('Space', e)}
-                      className={`w-9 h-9 rounded-full bg-[#ae2240] hover:bg-[#8e192c] border-[#000] border-2 select-none text-white font-black text-xs cursor-pointer flex items-center justify-center tracking-tighter touch-none ${
-                        activeKeys['Space'] ? 'gameboy-btn-tactile-active' : 'gameboy-btn-tactile'
+                      className={`w-9 h-9 rounded-full border-2 border-black select-none text-white font-black text-xs cursor-pointer flex items-center justify-center tracking-tighter touch-none transition-all duration-75 ${
+                        consoleTheme === 'snes'
+                          ? (activeKeys['Space'] ? 'snes-btn-green-active text-emerald-100 border-emerald-900' : 'snes-btn-green text-white border-emerald-950')
+                          : (activeKeys['Space'] ? 'gameboy-btn-tactile-active bg-[#ae2240] hover:bg-[#8e192c]' : 'gameboy-btn-tactile bg-[#ae2240] hover:bg-[#8e192c]')
                       }`}
                       title="Salto [A]"
                     >
@@ -1024,16 +1215,25 @@ export default function App() {
               <div className="flex flex-col items-center">
                 <button
                   id="btn-select"
-                  onMouseDown={(e) => handleTouchStart('select', e)}
+                  onMouseDown={(e) => {
+                    handleTouchStart('select', e);
+                    setShowSpriteLab(prev => !prev);
+                    audio.playCoin();
+                  }}
                   onMouseUp={(e) => handleTouchEnd('select', e)}
-                  onTouchStart={(e) => handleTouchStart('select', e)}
+                  onTouchStart={(e) => {
+                    handleTouchStart('select', e);
+                    setShowSpriteLab(prev => !prev);
+                    audio.playCoin();
+                  }}
                   onTouchEnd={(e) => handleTouchEnd('select', e)}
                   onTouchCancel={(e) => handleTouchEnd('select', e)}
                   className={`w-12 h-3.5 bg-[#7a7872] hover:bg-zinc-800 border-2 border-black rounded-full transform -rotate-[26deg] shadow-md cursor-pointer transition select-none touch-none ${
-                    activeKeys['select'] ? 'bg-zinc-950 scale-95 shadow-inner' : ''
+                    showSpriteLab || activeKeys['select'] ? 'bg-zinc-950 scale-95 shadow-inner border-purple-400' : ''
                   }`}
+                  title="Aseprite / Sprite Lab AI"
                 />
-                <span className="text-[8px] font-black text-zinc-600 mt-2 tracking-widest uppercase font-mono font-bold">SELECT</span>
+                <span className={`text-[7px] font-black mt-2 tracking-widest uppercase font-mono transition-colors font-bold ${showSpriteLab ? 'text-purple-400' : 'text-zinc-650'}`}>SELECT (LAB)</span>
               </div>
 
               {/* Start button */}
@@ -1064,6 +1264,22 @@ export default function App() {
           </>
         )}
 
+        </div>
+
+        {/* Sprite Automator Laboratory */}
+        <AnimatePresence>
+          {showSpriteLab && (
+            <motion.div
+              initial={{ opacity: 0, x: 40, scale: 0.95 }}
+              animate={{ opacity: 1, x: 0, scale: 1 }}
+              exit={{ opacity: 0, x: 40, scale: 0.95 }}
+              transition={{ duration: 0.25, ease: "easeOut" }}
+              className="w-full max-w-sm lg:max-w-xs shrink-0 z-50"
+            >
+              <SpriteLab onNotifyApply={() => setShowSpriteLab(false)} />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Extra keyboard support stats info block */}

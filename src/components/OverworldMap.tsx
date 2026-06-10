@@ -47,7 +47,7 @@ export default function OverworldMap({ levels, stats, onSelectLevel, activeKeys 
         const prevIndex = (currentIndex - 1 + levels.length) % levels.length;
         setSelectedLevelId(levels[prevIndex].id);
         audio.playCoin();
-      } else if (activeKeys['start'] || activeKeys['Enter'] || activeKeys[' '] || activeKeys['select'] || activeKeys['a']) {
+      } else if (activeKeys['start'] || activeKeys['Enter'] || activeKeys['Space'] || activeKeys[' '] || activeKeys['select']) {
         if (activeLevel.unlocked) {
           audio.playPowerUp();
           onSelectLevel(activeLevel.id);
