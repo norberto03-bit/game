@@ -659,6 +659,7 @@ export default function App() {
                 onTouchStart={handleTrackpadTouchStart}
                 onTouchMove={handleTrackpadTouchMove}
                 onTouchEnd={handleTrackpadTouchEnd}
+                onTouchCancel={handleTrackpadTouchEnd}
                 onMouseDown={handleTrackpadMouseDown}
                 onMouseMove={handleTrackpadMouseMove}
                 onMouseUp={handleTrackpadMouseUp}
@@ -695,6 +696,7 @@ export default function App() {
                   onTouchStart={handleJoystickDragStart}
                   onTouchMove={handleJoystickDragMove}
                   onTouchEnd={handleJoystickEnd}
+                  onTouchCancel={handleJoystickEnd}
                   onMouseDown={handleJoystickDragStartMouse}
                   onMouseMove={handleJoystickDragMoveMouse}
                   onMouseUp={handleJoystickEnd}
@@ -737,6 +739,7 @@ export default function App() {
                     onMouseUp={(e) => handleTouchEnd('c', e)}
                     onTouchStart={(e) => handleTouchStart('c', e)}
                     onTouchEnd={(e) => handleTouchEnd('c', e)}
+                    onTouchCancel={(e) => handleTouchEnd('c', e)}
                     className={`w-9 h-9 rounded-full bg-rose-500/20 active:bg-rose-500/60 hover:bg-rose-500/30 text-rose-300 font-extrabold border border-rose-500/40 shadow-inner flex flex-col items-center justify-center text-[7px] transition duration-150 ${
                       activeKeys['c'] ? 'bg-rose-500/70 border-rose-400 scale-90' : ''
                     }`}
@@ -752,6 +755,7 @@ export default function App() {
                     onMouseUp={(e) => handleTouchEnd('x', e)}
                     onTouchStart={(e) => handleTouchStart('x', e)}
                     onTouchEnd={(e) => handleTouchEnd('x', e)}
+                    onTouchCancel={(e) => handleTouchEnd('x', e)}
                     className={`w-9 h-9 rounded-full bg-cyan-500/20 active:bg-cyan-500/60 hover:bg-cyan-500/30 text-cyan-300 font-extrabold border border-cyan-500/40 shadow-inner flex flex-col items-center justify-center text-[7px] transition duration-150 ${
                       activeKeys['x'] ? 'bg-cyan-500/70 border-cyan-400 scale-90' : ''
                     }`}
@@ -767,6 +771,7 @@ export default function App() {
                     onMouseUp={(e) => handleTouchEnd('select', e)}
                     onTouchStart={(e) => handleTouchStart('select', e)}
                     onTouchEnd={(e) => handleTouchEnd('select', e)}
+                    onTouchCancel={(e) => handleTouchEnd('select', e)}
                     className={`w-9 h-9 rounded-full bg-amber-500/20 active:bg-amber-500/60 hover:bg-amber-500/30 text-amber-300 font-extrabold border border-amber-500/40 shadow-inner flex flex-col items-center justify-center text-[7px] transition duration-150 ${
                       activeKeys['select'] ? 'bg-amber-500/70 border-amber-400 scale-90' : ''
                     }`}
@@ -787,6 +792,7 @@ export default function App() {
                     onMouseUp={(e) => handleTouchEnd('b', e)}
                     onTouchStart={(e) => handleTouchStart('b', e)}
                     onTouchEnd={(e) => handleTouchEnd('b', e)}
+                    onTouchCancel={(e) => handleTouchEnd('b', e)}
                     className={`w-11 h-11 rounded-full bg-purple-500/20 active:bg-purple-500/60 hover:bg-purple-500/30 text-purple-300 font-black border border-purple-500/40 shadow-inner flex flex-col items-center justify-center text-[7px] transition duration-150 ${
                       activeKeys['b'] ? 'bg-purple-500/70 border-purple-400 scale-90' : ''
                     }`}
@@ -802,6 +808,7 @@ export default function App() {
                     onMouseUp={(e) => handleTouchEnd('Space', e)}
                     onTouchStart={(e) => handleTouchStart('Space', e)}
                     onTouchEnd={(e) => handleTouchEnd('Space', e)}
+                    onTouchCancel={(e) => handleTouchEnd('Space', e)}
                     className={`w-14 h-14 rounded-full bg-emerald-500/30 active:bg-emerald-500/70 hover:bg-emerald-500/40 text-emerald-300 font-black border border-emerald-400 shadow-[0_0_12px_rgba(16,185,129,0.3)] flex flex-col items-center justify-center text-[8px] transition duration-150 ${
                       activeKeys['Space'] ? 'bg-emerald-500/80 border-emerald-300 scale-90 shadow-inner' : ''
                     }`}
@@ -839,7 +846,7 @@ export default function App() {
         ) : (
           /* --- ORIGINAL RETRO GAMEBOY CONTROLLER SECTIONS (Section 2 & 3) --- */
           <>
-            <div className="grid grid-cols-12 gap-1 items-center mt-1 px-1">
+            <div className="grid grid-cols-12 gap-1 items-center mt-1 px-1 select-none touch-none">
               
               {/* A: Black dpad on left */}
               <div className="col-span-5 flex items-center justify-center select-none py-1">
@@ -877,7 +884,8 @@ export default function App() {
                     onMouseLeave={(e) => handleTouchEnd('ArrowUp', e)}
                     onTouchStart={(e) => handleTouchStart('ArrowUp', e)}
                     onTouchEnd={(e) => handleTouchEnd('ArrowUp', e)}
-                    className="absolute top-0 left-10 w-8 h-10 active:opacity-20 z-25 cursor-pointer rounded"
+                    onTouchCancel={(e) => handleTouchEnd('ArrowUp', e)}
+                    className="absolute top-0 left-10 w-8 h-10 active:opacity-20 z-25 cursor-pointer rounded touch-none"
                     title="Caminar Arriba"
                   />
                   <button
@@ -887,7 +895,8 @@ export default function App() {
                     onMouseLeave={(e) => handleTouchEnd('ArrowDown', e)}
                     onTouchStart={(e) => handleTouchStart('ArrowDown', e)}
                     onTouchEnd={(e) => handleTouchEnd('ArrowDown', e)}
-                    className="absolute bottom-0 left-10 w-8 h-10 active:opacity-20 z-25 cursor-pointer rounded"
+                    onTouchCancel={(e) => handleTouchEnd('ArrowDown', e)}
+                    className="absolute bottom-0 left-10 w-8 h-10 active:opacity-20 z-25 cursor-pointer rounded touch-none"
                     title="Agacharse"
                   />
                   <button
@@ -897,7 +906,8 @@ export default function App() {
                     onMouseLeave={(e) => handleTouchEnd('ArrowLeft', e)}
                     onTouchStart={(e) => handleTouchStart('ArrowLeft', e)}
                     onTouchEnd={(e) => handleTouchEnd('ArrowLeft', e)}
-                    className="absolute left-0 top-10 w-10 h-8 active:opacity-20 z-25 cursor-pointer rounded"
+                    onTouchCancel={(e) => handleTouchEnd('ArrowLeft', e)}
+                    className="absolute left-0 top-10 w-10 h-8 active:opacity-20 z-25 cursor-pointer rounded touch-none"
                     title="Caminar Izquierda"
                   />
                   <button
@@ -907,7 +917,8 @@ export default function App() {
                     onMouseLeave={(e) => handleTouchEnd('ArrowRight', e)}
                     onTouchStart={(e) => handleTouchStart('ArrowRight', e)}
                     onTouchEnd={(e) => handleTouchEnd('ArrowRight', e)}
-                    className="absolute right-0 top-10 w-10 h-8 active:opacity-20 z-25 cursor-pointer rounded"
+                    onTouchCancel={(e) => handleTouchEnd('ArrowRight', e)}
+                    className="absolute right-0 top-10 w-10 h-8 active:opacity-20 z-25 cursor-pointer rounded touch-none"
                     title="Caminar Derecha"
                   />
                 </div>
@@ -934,14 +945,15 @@ export default function App() {
                       onMouseUp={(e) => handleTouchEnd('c', e)}
                       onTouchStart={(e) => handleTouchStart('c', e)}
                       onTouchEnd={(e) => handleTouchEnd('c', e)}
-                      className={`w-9 h-9 rounded-full bg-[#f85000] hover:bg-orange-500 border-2 border-black select-none text-white font-black text-xs cursor-pointer flex items-center justify-center tracking-tighter ${
+                      onTouchCancel={(e) => handleTouchEnd('c', e)}
+                      className={`w-9 h-9 rounded-full bg-[#f85000] hover:bg-orange-500 border-2 border-black select-none text-white font-black text-xs cursor-pointer flex items-center justify-center tracking-tighter touch-none ${
                         activeKeys['c'] ? 'gameboy-btn-tactile-active' : 'gameboy-btn-tactile'
                       }`}
                       title="Fuego [Y] / Disparo C"
                     >
                       Y
                     </button>
-                    <span className="text-[7px] font-black text-zinc-700 mt-1 uppercase">FUEGO</span>
+                    <span className="text-[7px] font-black text-zinc-700 mt-1 uppercase font-bold">FUEGO</span>
                   </div>
 
                   {/* X Button: (Disparo Hielo - X) */}
@@ -952,14 +964,15 @@ export default function App() {
                       onMouseUp={(e) => handleTouchEnd('x', e)}
                       onTouchStart={(e) => handleTouchStart('x', e)}
                       onTouchEnd={(e) => handleTouchEnd('x', e)}
-                      className={`w-9 h-9 rounded-full bg-cyan-600 hover:bg-cyan-500 border-2 border-black select-none text-white font-black text-xs cursor-pointer flex items-center justify-center tracking-tighter ${
+                      onTouchCancel={(e) => handleTouchEnd('x', e)}
+                      className={`w-9 h-9 rounded-full bg-cyan-600 hover:bg-cyan-500 border-2 border-black select-none text-white font-black text-xs cursor-pointer flex items-center justify-center tracking-tighter touch-none ${
                         activeKeys['x'] ? 'gameboy-btn-tactile-active' : 'gameboy-btn-tactile'
                       }`}
                       title="Hielo [X] / Disparo X"
                     >
                       X
                     </button>
-                    <span className="text-[7px] font-black text-zinc-700 mt-1 uppercase">HIELO</span>
+                    <span className="text-[7px] font-black text-zinc-700 mt-1 uppercase font-bold">HIELO</span>
                   </div>
 
                   {/* B Button: (Turbo / Lift - Shift/b) */}
@@ -970,14 +983,15 @@ export default function App() {
                       onMouseUp={(e) => handleTouchEnd('b', e)}
                       onTouchStart={(e) => handleTouchStart('b', e)}
                       onTouchEnd={(e) => handleTouchEnd('b', e)}
-                      className={`w-9 h-9 rounded-full bg-[#ae2240] hover:bg-[#8e192c] border-2 border-black select-none text-white font-black text-xs cursor-pointer flex items-center justify-center tracking-tighter ${
+                      onTouchCancel={(e) => handleTouchEnd('b', e)}
+                      className={`w-9 h-9 rounded-full bg-[#ae2240] hover:bg-[#8e192c] border-2 border-black select-none text-white font-black text-xs cursor-pointer flex items-center justify-center tracking-tighter touch-none ${
                         activeKeys['b'] ? 'gameboy-btn-tactile-active' : 'gameboy-btn-tactile'
                       }`}
                       title="Turbo [B]"
                     >
                       B
                     </button>
-                    <span className="text-[7px] font-black text-zinc-700 mt-1 uppercase">TURBO</span>
+                    <span className="text-[7px] font-black text-zinc-700 mt-1 uppercase font-bold">TURBO</span>
                   </div>
 
                   {/* A Button: (Saltar - Space) */}
@@ -988,14 +1002,15 @@ export default function App() {
                       onMouseUp={(e) => handleTouchEnd('Space', e)}
                       onTouchStart={(e) => handleTouchStart('Space', e)}
                       onTouchEnd={(e) => handleTouchEnd('Space', e)}
-                      className={`w-9 h-9 rounded-full bg-[#ae2240] hover:bg-[#8e192c] border-[#000] border-2 select-none text-white font-black text-xs cursor-pointer flex items-center justify-center tracking-tighter ${
+                      onTouchCancel={(e) => handleTouchEnd('Space', e)}
+                      className={`w-9 h-9 rounded-full bg-[#ae2240] hover:bg-[#8e192c] border-[#000] border-2 select-none text-white font-black text-xs cursor-pointer flex items-center justify-center tracking-tighter touch-none ${
                         activeKeys['Space'] ? 'gameboy-btn-tactile-active' : 'gameboy-btn-tactile'
                       }`}
                       title="Salto [A]"
                     >
                       A
                     </button>
-                    <span className="text-[7px] font-black text-zinc-700 mt-1 uppercase">SALTAR</span>
+                    <span className="text-[7px] font-black text-zinc-700 mt-1 uppercase font-bold">SALTAR</span>
                   </div>
 
                 </div>
@@ -1013,11 +1028,12 @@ export default function App() {
                   onMouseUp={(e) => handleTouchEnd('select', e)}
                   onTouchStart={(e) => handleTouchStart('select', e)}
                   onTouchEnd={(e) => handleTouchEnd('select', e)}
-                  className={`w-12 h-3.5 bg-[#7a7872] hover:bg-zinc-800 border-2 border-black rounded-full transform -rotate-[26deg] shadow-md cursor-pointer transition select-none ${
+                  onTouchCancel={(e) => handleTouchEnd('select', e)}
+                  className={`w-12 h-3.5 bg-[#7a7872] hover:bg-zinc-800 border-2 border-black rounded-full transform -rotate-[26deg] shadow-md cursor-pointer transition select-none touch-none ${
                     activeKeys['select'] ? 'bg-zinc-950 scale-95 shadow-inner' : ''
                   }`}
                 />
-                <span className="text-[8px] font-black text-zinc-600 mt-2 tracking-widest uppercase font-mono">SELECT</span>
+                <span className="text-[8px] font-black text-zinc-600 mt-2 tracking-widest uppercase font-mono font-bold">SELECT</span>
               </div>
 
               {/* Start button */}
@@ -1028,11 +1044,12 @@ export default function App() {
                   onMouseUp={(e) => handleTouchEnd('start', e)}
                   onTouchStart={(e) => handleTouchStart('start', e)}
                   onTouchEnd={(e) => handleTouchEnd('start', e)}
-                  className={`w-12 h-3.5 bg-[#7a7872] hover:bg-zinc-800 border-2 border-black rounded-full transform -rotate-[26deg] shadow-md cursor-pointer transition select-none ${
+                  onTouchCancel={(e) => handleTouchEnd('start', e)}
+                  className={`w-12 h-3.5 bg-[#7a7872] hover:bg-zinc-800 border-2 border-black rounded-full transform -rotate-[26deg] shadow-md cursor-pointer transition select-none touch-none ${
                     activeKeys['start'] ? 'bg-zinc-950 scale-95 shadow-inner' : ''
                   }`}
                 />
-                <span className="text-[8px] font-black text-zinc-600 mt-2 tracking-widest uppercase font-mono">START</span>
+                <span className="text-[8px] font-black text-zinc-600 mt-2 tracking-widest uppercase font-mono font-bold">START</span>
               </div>
 
               {/* Speaker Slits cuts */}

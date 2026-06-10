@@ -48,11 +48,8 @@ export default function GameCanvas({
   const touchKeysRef = useRef<{ [key: string]: boolean }>({});
 
   useEffect(() => {
-    // Auto-detect touch device & default touch features
-    const isTouch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
-    if (isTouch) {
-      setShowTouchOverlay(true);
-    }
+    // Auto-detect touch device & default touch features - kept false by default to prevent duplication with bottom gamepad
+    setShowTouchOverlay(false);
   }, []);
   
   // Refs to hold mutable, high-frequency game loop data (avoids react state re-render lag)
@@ -1314,8 +1311,12 @@ export default function GameCanvas({
             // Land Patrollers (champi/tortu): Rush-Hour acceleration!
             const rushMultiplier = en.type === 'champi' ? 1.8 : 1.4;
             const targetSpeed = Math.abs(en.patrolBaseVx || 1.2) * rushMultiplier;
-            en.vx = dx > 0 ? targetSpeed : -targetSpeed;
-            en.facing = en.vx > 0 ? 'right' : 'left';
+            
+            // To prevent direction-flip jittering when extremely close (overlapping), only update direction if not overlapping too close
+            if (Math.abs(dx) > 6) {
+              en.vx = dx > 0 ? targetSpeed : -targetSpeed;
+              en.facing = en.vx > 0 ? 'right' : 'left';
+            }
 
             // Apply light gravity so they fall on cliffs
             en.vy += 0.25;
@@ -1342,7 +1343,9 @@ export default function GameCanvas({
             const isPlayerAbove = dy < -32 && Math.abs(dx) < 60;
             const canJump = en.vy === 0 || Math.abs(en.vy) < 0.2; // roughly grounded
 
-            if ((isBlockedAhead || isPlayerAbove) && canJump && Math.random() < 0.04) {
+            // If physically blocked ahead, jump immediately to scale obstacles; otherwise jump with chance if player is above
+            const shouldScaleObstacle = isBlockedAhead && canJump;
+            if ((shouldScaleObstacle || (isPlayerAbove && canJump && Math.random() < 0.04))) {
               en.vy = -5.8; // beautiful mountain hop
               s.texts.push({
                 id: Math.random().toString(),
@@ -3329,6 +3332,12 @@ export default function GameCanvas({
           ctx.fillRect(ex + en.width / 2 - 2, ey - 6 + tireOffset, 4, 4);
         } else {
           // Flat mushroom walking (Mushroom monster Goomba-like)
+          // Procedural feet walking animation
+          const walkFactor = Math.sin(Date.now() * 0.015 + Number(en.id.charCodeAt(0) || 0));
+          ctx.fillStyle = '#2c3e50'; // charcoal shoes
+          ctx.fillRect(ex + 1, ey + en.height - 4 + (walkFactor > 0 ? -2 : 0), 6, 4);
+          ctx.fillRect(ex + en.width - 7, ey + en.height - 4 + (walkFactor < 0 ? -2 : 0), 6, 4);
+
           ctx.fillStyle = '#d35400'; // dark brown dome
           ctx.beginPath();
           ctx.arc(ex + en.width / 2, ey + 10, en.width / 2, Math.PI, 0);
@@ -3366,10 +3375,21 @@ export default function GameCanvas({
           
           // Wheels
           ctx.fillStyle = '#111';
+          const taxiWheelOffset = Math.sin(Date.now() * 0.05 + Number(en.id.charCodeAt(0) || 0)) * 1.5;
           ctx.fillRect(ex + 2, ey + en.height - 5, 5, 5);
           ctx.fillRect(ex + en.width - 7, ey + en.height - 5, 5, 5);
+          // shiny hubs
+          ctx.fillStyle = '#f1c40f';
+          ctx.fillRect(ex + 3, ey + en.height - 4 + (taxiWheelOffset > 0 ? -1 : 1), 3, 3);
+          ctx.fillRect(ex + en.width - 6, ey + en.height - 4 + (taxiWheelOffset < 0 ? -1 : 1), 3, 3);
         } else {
           // Green Turtle shell walking (Koopa standard)
+          // Procedural boots walking animation
+          const walkFactor = Math.sin(Date.now() * 0.015 + Number(en.id.charCodeAt(1) || 0));
+          ctx.fillStyle = '#f1c40f'; // yellow boots leg
+          ctx.fillRect(ex + 3, ey + en.height - 6 + (walkFactor > 0 ? -2 : 0), 4, 6);
+          ctx.fillRect(ex + en.width - 7, ey + en.height - 6 + (walkFactor < 0 ? -2 : 0), 4, 6);
+
           ctx.fillStyle = '#27ae60'; // Green dome shell
           ctx.beginPath();
           ctx.ellipse(ex + en.width / 2, ey + 16, 12, 10, 0, 0, Math.PI * 2);
@@ -3429,12 +3449,19 @@ export default function GameCanvas({
         }
       } else if (en.type === 'jefe') {
         // --- El Gran Oso de la Sierra de Santiago ---
+        // Boss bobbing walking animation
+        const bearWalk = Math.sin(Date.now() * 0.01) * 3;
+        
+        ctx.fillStyle = '#402410'; // darker brown legs
+        ctx.fillRect(ex + 8, ey + en.height - 8 + (bearWalk > 0 ? -3 : 0), 14, 8);
+        ctx.fillRect(ex + en.width - 22, ey + en.height - 8 + (bearWalk < 0 ? -3 : 0), 14, 8);
+
         ctx.fillStyle = '#5c3a21'; // deep brown fur
-        ctx.fillRect(ex, ey, en.width, en.height);
+        ctx.fillRect(ex, ey, en.width, en.height - 4);
         
         // Cozy lighter grizzly belly
         ctx.fillStyle = '#8e5431';
-        ctx.fillRect(ex + 8, ey + 14, en.width - 16, en.height - 14);
+        ctx.fillRect(ex + 8, ey + 14, en.width - 16, en.height - 18);
         
         // Grizzly roaring snout
         ctx.fillStyle = '#f5cd79';
@@ -3446,7 +3473,7 @@ export default function GameCanvas({
         // Massive roaring yellow claws
         ctx.fillStyle = '#f1c40f';
         const clawsX = en.facing === 'left' ? ex - 4 : ex + en.width - 2;
-        ctx.fillRect(clawsX, ey + en.height - 6, 6, 6);
+        ctx.fillRect(clawsX, ey + en.height - 10, 6, 6);
         
         // Glowing red angry eyes
         ctx.fillStyle = '#e74c3c';
