@@ -3,6 +3,7 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
 import dotenv from "dotenv";
+import fs from "fs";
 
 dotenv.config();
 
@@ -24,6 +25,36 @@ async function startServer() {
       }
     }
   }) : null;
+
+  // API Endpoint to check health and list all image files on server disk
+  app.get("/api/health", (req, res) => {
+    const pngs: string[] = [];
+    function scanDir(dir: string) {
+      if (!fs.existsSync(dir)) return;
+      try {
+        const files = fs.readdirSync(dir);
+        for (const file of files) {
+          const fullPath = path.join(dir, file);
+          if (file === "node_modules" || file === ".next" || file === "dist" || file === ".git" || file === ".aistudio") {
+            continue;
+          }
+          const stat = fs.statSync(fullPath);
+          if (stat.isDirectory()) {
+            scanDir(fullPath);
+          } else {
+            const ext = path.extname(file).toLowerCase();
+            if ([".png", ".jpg", ".jpeg", ".gif", ".svg"].includes(ext)) {
+              pngs.push(path.relative(process.cwd(), fullPath));
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Error scanning directory:", err);
+      }
+    }
+    scanDir(process.cwd());
+    res.json({ status: "ok", imagesOnDisk: pngs });
+  });
 
   // API Endpoint to transform a user's photo into a custom pixel matrix (16x16, 32x32, 64x64, 128x128)
   app.post("/api/gemini/photo-to-sprite", async (req, res) => {
@@ -245,6 +276,36 @@ Si respondes con "rows", debe ser una lista/array de exactamente ${targetSize} s
     }
   });
 
+  // Serve custom uploaded assets from disk if they exist (both in dev and prod)
+  app.use((req, res, next) => {
+    const ext = path.extname(req.path).toLowerCase();
+    if ([".png", ".jpg", ".jpeg", ".gif", ".svg"].includes(ext)) {
+      const safeName = path.basename(req.path);
+      
+      // Define directory paths where the file could be located
+      const possiblePaths = [
+        path.join(process.cwd(), safeName),
+        path.join(process.cwd(), "assets", safeName),
+        path.join(process.cwd(), "src", "assets", safeName),
+        path.join(process.cwd(), "public", safeName)
+      ];
+
+      let found = false;
+      for (const p of possiblePaths) {
+        if (fs.existsSync(p)) {
+          res.sendFile(p);
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        next();
+      }
+    } else {
+      next();
+    }
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
@@ -254,6 +315,7 @@ Si respondes con "rows", debe ser una lista/array de exactamente ${targetSize} s
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
+
     app.use(express.static(distPath));
     app.get("*", (req, res) => {
       res.sendFile(path.join(distPath, "index.html"));

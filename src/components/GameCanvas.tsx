@@ -91,9 +91,15 @@ export default function GameCanvas({
         'nivel_1_fondo.png',
         'fondo1.png',
         'background.png',
+        'escenario.png',
+        'fondo.png',
         'assets/fondo_nivel_1.png',
         'assets/nivel_1_fondo.png',
-        'src/assets/fondo_nivel_1.png'
+        'assets/escenario.png',
+        'assets/fondo.png',
+        'src/assets/fondo_nivel_1.png',
+        'src/assets/escenario.png',
+        'src/assets/fondo.png'
       ];
       if (index >= bgFilenames.length) {
         console.log('No custom level 1 background image found in server directories. Relying on gorgeous vector graphics fallback!');
@@ -521,8 +527,8 @@ export default function GameCanvas({
     const totalTiles = Math.ceil(s.levelLength / tileSize);
     for (let tx = 0; tx < totalTiles; tx++) {
       // Level specific pits
-      if (theme === 'green' && (tx === 15 || tx === 16 || tx === 35 || tx === 36)) {
-        continue; // open pit
+      if (theme === 'green' && (tx === 8 || tx === 9 || tx === 14 || tx === 15 || tx === 52 || tx === 53 || tx === 54 || tx === 55 || tx === 56)) {
+        continue; // open pits and canyon gaps matching the scenario design
       }
       if (theme === 'cave' && (tx === 20 || tx === 21 || tx === 22 || tx === 40 || tx === 41)) {
         // Lava at bottom level
@@ -561,108 +567,165 @@ export default function GameCanvas({
     if (theme === 'green') {
       // --- FOREST REGION (Tiles 0 to 25) ---
 
-      // Soil platform 1 (mesa): Tiles 10, 11, 12. Soil underneath, grass face on top
-      blocks.push({ id: 'forest-mesa1-g1', x: 10, y: 12, type: 'ground' });
-      blocks.push({ id: 'forest-mesa1-g2', x: 11, y: 12, type: 'ground' });
-      blocks.push({ id: 'forest-mesa1-g3', x: 12, y: 12, type: 'ground' });
-      blocks.push({ id: 'forest-mesa1-g4', x: 10, y: 11, type: 'ground' });
-      blocks.push({ id: 'forest-mesa1-g5', x: 11, y: 11, type: 'ground' });
-      blocks.push({ id: 'forest-mesa1-g6', x: 12, y: 11, type: 'ground' });
+      // Elevated Soil platform (mesa): Tiles 10, 11, 12, 13
+      // Soil underneath, grass face on top, creating an elevated grass bridge between Gap 1 and Gap 2
+      blocks.push({ id: 'forest-soil-bridge-g1', x: 10, y: 12, type: 'ground' });
+      blocks.push({ id: 'forest-soil-bridge-g2', x: 11, y: 12, type: 'ground' });
+      blocks.push({ id: 'forest-soil-bridge-g3', x: 12, y: 12, type: 'ground' });
+      blocks.push({ id: 'forest-soil-bridge-g4', x: 13, y: 12, type: 'ground' });
+      blocks.push({ id: 'forest-soil-bridge-g5', x: 10, y: 11, type: 'ground' });
+      blocks.push({ id: 'forest-soil-bridge-g6', x: 11, y: 11, type: 'ground' });
+      blocks.push({ id: 'forest-soil-bridge-g7', x: 12, y: 11, type: 'ground' });
+      blocks.push({ id: 'forest-soil-bridge-g8', x: 13, y: 11, type: 'ground' });
 
-      // Bricks and question block containing powerup-fire above mesa 1
-      blocks.push({ id: 'forest-brick-1', x: 10, y: 8, type: 'brick' });
-      blocks.push({ id: 'q-fire', x: 11, y: 8, type: 'question', contains: 'powerup-fire' });
-      blocks.push({ id: 'forest-brick-2', x: 12, y: 8, type: 'brick' });
+      // Bricks and Quartz Question block containing powerup-fire above soil platform
+      blocks.push({ id: 'forest-brick-1', x: 11, y: 8, type: 'brick' });
+      blocks.push({ id: 'q-fire', x: 12, y: 8, type: 'question', contains: 'powerup-fire' });
+      blocks.push({ id: 'forest-brick-2', x: 13, y: 8, type: 'brick' });
 
-      // 3 Floating coins right after mesa 1, hovering over the ground path
-      blocks.push({ id: 'forest-coin-1', x: 14, y: 10, type: 'coin' });
-      blocks.push({ id: 'forest-coin-2', x: 15, y: 10, type: 'coin' });
-      blocks.push({ id: 'forest-coin-3', x: 16, y: 10, type: 'coin' });
+      // 3 Floating coins hovering over first and second gaps to reward jumping
+      blocks.push({ id: 'forest-coin-1', x: 8, y: 10, type: 'coin' });
+      blocks.push({ id: 'forest-coin-2', x: 9, y: 10, type: 'coin' });
+      blocks.push({ id: 'forest-coin-3', x: 14, y: 10, type: 'coin' });
+      blocks.push({ id: 'forest-coin-4', x: 15, y: 10, type: 'coin' });
 
-      // Soil platform 2 (mesa): Tiles 17, 18
-      blocks.push({ id: 'forest-mesa2-g1', x: 17, y: 12, type: 'ground' });
-      blocks.push({ id: 'forest-mesa2-g2', x: 18, y: 12, type: 'ground' });
-      blocks.push({ id: 'forest-mesa2-g3', x: 17, y: 11, type: 'ground' });
+      // Soil platform 2: Tiles 18, 19, 20
+      blocks.push({ id: 'forest-mesa2-g1', x: 18, y: 12, type: 'ground' });
+      blocks.push({ id: 'forest-mesa2-g2', x: 19, y: 12, type: 'ground' });
+      blocks.push({ id: 'forest-mesa2-g3', x: 20, y: 12, type: 'ground' });
       blocks.push({ id: 'forest-mesa2-g4', x: 18, y: 11, type: 'ground' });
+      blocks.push({ id: 'forest-mesa2-g5', x: 19, y: 11, type: 'ground' });
+      blocks.push({ id: 'forest-mesa2-g6', x: 20, y: 11, type: 'ground' });
 
-      // Question block containing powerup-ice above mesa 2
-      blocks.push({ id: 'q-ice', x: 18, y: 8, type: 'question', contains: 'powerup-ice' });
+      // Question block containing powerup-ice above platform 2
+      blocks.push({ id: 'q-ice', x: 19, y: 8, type: 'question', contains: 'powerup-ice' });
 
 
       // --- CENTRAL RUINS & CASCADE WATERFALL REGION (Tiles 25 to 50) ---
 
-      // Stone steps / pyramid going up: Steps at columns 26, 27, 28, 29, 30
-      // step 1
-      blocks.push({ id: 'pyr-step-1', x: 26, y: 12, type: 'brick' });
-      // step 2
-      blocks.push({ id: 'pyr-step-2a', x: 27, y: 12, type: 'brick' });
-      blocks.push({ id: 'pyr-step-2b', x: 27, y: 11, type: 'brick' });
-      // step 3
-      blocks.push({ id: 'pyr-step-3a', x: 28, y: 12, type: 'brick' });
-      blocks.push({ id: 'pyr-step-3b', x: 28, y: 11, type: 'brick' });
-      blocks.push({ id: 'pyr-step-3c', x: 28, y: 10, type: 'brick' });
-      // step 4
-      blocks.push({ id: 'pyr-step-4a', x: 29, y: 12, type: 'brick' });
-      blocks.push({ id: 'pyr-step-4b', x: 29, y: 11, type: 'brick' });
-      blocks.push({ id: 'pyr-step-4c', x: 29, y: 10, type: 'brick' });
-      blocks.push({ id: 'pyr-step-4d', x: 29, y: 9, type: 'brick' });
+      // Basalt stone step-pyramid block layout (steps at columns 25, 26, 27, 28, 29, 30)
+      
+      // Step column 25: height 1
+      blocks.push({ id: 'pyr-step-1', x: 25, y: 12, type: 'brick' });
+      
+      // Step column 26: height 2
+      blocks.push({ id: 'pyr-step-2a', x: 26, y: 12, type: 'brick' });
+      blocks.push({ id: 'pyr-step-2b', x: 26, y: 11, type: 'brick' });
+      
+      // Step column 27: height 3
+      blocks.push({ id: 'pyr-step-3a', x: 27, y: 12, type: 'brick' });
+      blocks.push({ id: 'pyr-step-3b', x: 27, y: 11, type: 'brick' });
+      blocks.push({ id: 'pyr-step-3c', x: 27, y: 10, type: 'brick' });
+      
+      // Step column 28: height 4
+      blocks.push({ id: 'pyr-step-4a', x: 28, y: 12, type: 'brick' });
+      blocks.push({ id: 'pyr-step-4b', x: 28, y: 11, type: 'brick' });
+      blocks.push({ id: 'pyr-step-4c', x: 28, y: 10, type: 'brick' });
+      blocks.push({ id: 'pyr-step-4d', x: 28, y: 9, type: 'brick' });
 
-      // Coins floating super high near the pyramid summit and waterfall source
-      blocks.push({ id: 'pyr-coin-1', x: 28, y: 7, type: 'coin' });
-      blocks.push({ id: 'pyr-coin-2', x: 29, y: 7, type: 'coin' });
+      // Step column 29: height 5
+      blocks.push({ id: 'pyr-step-5a', x: 29, y: 12, type: 'brick' });
+      blocks.push({ id: 'pyr-step-5b', x: 29, y: 11, type: 'brick' });
+      blocks.push({ id: 'pyr-step-5c', x: 29, y: 10, type: 'brick' });
+      blocks.push({ id: 'pyr-step-5d', x: 29, y: 9, type: 'brick' });
+      blocks.push({ id: 'pyr-step-5e', x: 29, y: 8, type: 'brick' });
 
-      // Question block hovering above ruins stairs containing powerup-turbo
-      blocks.push({ id: 'q-turbo', x: 31, y: 7, type: 'question', contains: 'powerup-turbo' });
+      // Step column 30: height 6 (Pyramid peak starts!)
+      blocks.push({ id: 'pyr-step-6a', x: 30, y: 12, type: 'brick' });
+      blocks.push({ id: 'pyr-step-6b', x: 30, y: 11, type: 'brick' });
+      blocks.push({ id: 'pyr-step-6c', x: 30, y: 10, type: 'brick' });
+      blocks.push({ id: 'pyr-step-6d', x: 30, y: 9, type: 'brick' });
+      blocks.push({ id: 'pyr-step-6e', x: 30, y: 8, type: 'brick' });
+      blocks.push({ id: 'pyr-step-6f', x: 30, y: 7, type: 'brick' });
 
-      // Stone slab ceiling / ancient archway bridge structure over bottom path (Tiles 35 to 40)
-      for (let tx = 35; tx <= 40; tx++) {
-        blocks.push({ id: `ruin-ceil-${tx}`, x: tx, y: 9, type: 'brick' });
+      // High pyramid summit/terrace (Tiles 31 to 35) flat at y = 7
+      for (let tx = 31; tx <= 35; tx++) {
+        blocks.push({ id: `pyr-top-g-${tx}`, x: tx, y: 7, type: 'brick' });
+        // Solid base below summit
+        for (let ty = 8; ty <= 12; ty++) {
+          blocks.push({ id: `pyr-top-base-${tx}-${ty}`, x: tx, y: ty, type: 'brick' });
+        }
       }
 
-      // Standalone coins hovering gracefully above the ancient archway ceiling
-      blocks.push({ id: 'arch-coin-1', x: 37, y: 7, type: 'coin' });
-      blocks.push({ id: 'arch-coin-2', x: 38, y: 7, type: 'coin' });
+      // Coins cascading down the waterfall along the steps to reward players
+      blocks.push({ id: 'casc-coin-1', x: 28, y: 6, type: 'coin' });
+      blocks.push({ id: 'casc-coin-2', x: 29, y: 5, type: 'coin' });
+      blocks.push({ id: 'casc-coin-3', x: 31, y: 5, type: 'coin' });
+      blocks.push({ id: 'casc-coin-4', x: 32, y: 5, type: 'coin' });
 
-      // Interactive liftable blocks right inside the temple ruins passage underneath the stone ceiling
-      blocks.push({ id: 'lift-1', x: 36, y: 12, type: 'liftable' });
-      blocks.push({ id: 'lift-2', x: 37, y: 12, type: 'liftable' });
-      blocks.push({ id: 'lift-3', x: 38, y: 12, type: 'liftable' });
+      // Question block hovering above ruins stairs containing powerup-turbo
+      blocks.push({ id: 'q-turbo', x: 33, y: 4, type: 'question', contains: 'powerup-turbo' });
 
-      // Pipe-gate structure on the right exit of ruins passage (Tile 43)
-      blocks.push({ id: 'pipe1-x240', x: 43, y: 12, type: 'pipe' });
-      blocks.push({ id: 'pipe1-x240-top', x: 43, y: 11, type: 'pipe' });
+      // Ancient stone columns (carved ruins) next to the waterfall
+      blocks.push({ id: 'pillar-summit-1', x: 31, y: 6, type: 'brick' });
+      blocks.push({ id: 'pillar-summit-2', x: 35, y: 6, type: 'brick' });
+
+      // Green pipe at Tile 34 on the peak (contains secret entries!)
+      blocks.push({ id: 'pipe1-x240', x: 34, y: 6, type: 'pipe' });
+      blocks.push({ id: 'pipe1-x240-top', x: 34, y: 5, type: 'pipe' });
+
+      // Step-Down on the right side of the pyramid structure
+      // Step column 36: height 4
+      blocks.push({ id: 'pyr-down-1a', x: 36, y: 12, type: 'brick' });
+      blocks.push({ id: 'pyr-down-1b', x: 36, y: 11, type: 'brick' });
+      blocks.push({ id: 'pyr-down-1c', x: 36, y: 10, type: 'brick' });
+      blocks.push({ id: 'pyr-down-1d', x: 36, y: 9, type: 'brick' });
+      // Step column 37: height 2
+      blocks.push({ id: 'pyr-down-2a', x: 37, y: 12, type: 'brick' });
+      blocks.push({ id: 'pyr-down-2b', x: 37, y: 11, type: 'brick' });
+
+      // Interactive liftable blocks inside the ancient ruins courtyard at Tile 38-39
+      blocks.push({ id: 'lift-1', x: 38, y: 12, type: 'liftable' });
+      blocks.push({ id: 'lift-2', x: 39, y: 12, type: 'liftable' });
+      blocks.push({ id: 'lift-3', x: 38, y: 11, type: 'liftable' });
+
+      // Flat mountain forest lodge / courtyard plateau: Tiles 40 to 45
+      // y = 11 top, y = 12 base
+      for (let tx = 40; tx <= 45; tx++) {
+        blocks.push({ id: `lodge-p-${tx}-11`, x: tx, y: 11, type: 'ground' });
+        blocks.push({ id: `lodge-p-${tx}-12`, x: tx, y: 12, type: 'ground' });
+      }
+
+      // Horizontal pipe exiting from the right side of the lodge platform (matches picture!)
+      blocks.push({ id: 'lodge-pipe-bottom', x: 45, y: 10, type: 'pipe' });
+      blocks.push({ id: 'lodge-pipe-top', x: 45, y: 9, type: 'pipe' });
 
 
       // --- DESERT RIVER & CACTI REGION (Tiles 50 to 74) ---
 
-      // Bridge made of bricks crossing over the winding blue river (cols 53, 54, 55, 56)
-      blocks.push({ id: 'bridge-1n', x: 53, y: 12, type: 'brick' });
-      blocks.push({ id: 'bridge-2n', x: 54, y: 12, type: 'brick' });
-      blocks.push({ id: 'bridge-3n', x: 55, y: 12, type: 'brick' });
-      blocks.push({ id: 'bridge-4n', x: 56, y: 12, type: 'brick' });
+      // Wooden/brick bridge crossing over the deep blue winding river gap (cols 52, 53, 54, 55, 56)
+      blocks.push({ id: 'bridge-1n', x: 52, y: 11, type: 'brick' });
+      blocks.push({ id: 'bridge-2n', x: 53, y: 11, type: 'brick' });
+      blocks.push({ id: 'bridge-3n', x: 54, y: 11, type: 'brick' });
+      blocks.push({ id: 'bridge-4n', x: 55, y: 11, type: 'brick' });
+      blocks.push({ id: 'bridge-5n', x: 56, y: 11, type: 'brick' });
 
-      // Coins floating above the winding river bridge
-      blocks.push({ id: 'river-coin-1', x: 54, y: 9, type: 'coin' });
-      blocks.push({ id: 'river-coin-2', x: 55, y: 9, type: 'coin' });
+      // Coins floating above the river bridge and hidden below the bridge
+      blocks.push({ id: 'river-coin-1', x: 53, y: 8, type: 'coin' });
+      blocks.push({ id: 'river-coin-2', x: 54, y: 8, type: 'coin' });
+      blocks.push({ id: 'river-coin-3', x: 55, y: 8, type: 'coin' });
+      blocks.push({ id: 'river-coin-hidden-1', x: 53, y: 14, type: 'coin' });
+      blocks.push({ id: 'river-coin-hidden-2', x: 54, y: 14, type: 'coin' });
 
-      // Pillars/Posts (stone columns block layout)
-      blocks.push({ id: 'pillar-1-b2', x: 58, y: 12, type: 'brick' });
-      blocks.push({ id: 'pillar-1-b1', x: 58, y: 11, type: 'brick' });
-      blocks.push({ id: 'pillar-coin-1', x: 58, y: 9, type: 'coin' });
+      // Ancient stone pillars / columns
+      blocks.push({ id: 'pillar-1-b2', x: 59, y: 12, type: 'brick' });
+      blocks.push({ id: 'pillar-1-b1', x: 59, y: 11, type: 'brick' });
+      blocks.push({ id: 'pillar-coin-1', x: 59, y: 9, type: 'coin' });
 
-      blocks.push({ id: 'pillar-2-b1', x: 60, y: 12, type: 'brick' });
-      blocks.push({ id: 'pillar-coin-2', x: 60, y: 10, type: 'coin' });
+      blocks.push({ id: 'pillar-2-b2', x: 61, y: 12, type: 'brick' });
+      blocks.push({ id: 'pillar-2-b1', x: 61, y: 11, type: 'brick' });
+      blocks.push({ id: 'pillar-2-b0', x: 61, y: 10, type: 'brick' });
+      blocks.push({ id: 'pillar-coin-2', x: 61, y: 8, type: 'coin' });
 
-      // Special spinning yellow block (mystic runes chest containing coin) next to 3 gorgeous coins
+      // Glowing gold block chest (Ancient ruins quartz repository) containing a magic coin
       blocks.push({ id: 'q-coin-golden-block', x: 63, y: 9, type: 'question', contains: 'coin' });
       blocks.push({ id: 'desert-coin-a', x: 64, y: 9, type: 'coin' });
       blocks.push({ id: 'desert-coin-b', x: 65, y: 9, type: 'coin' });
       blocks.push({ id: 'desert-coin-c', x: 66, y: 9, type: 'coin' });
 
-      // Danger zones: Natural green Cardón Cacti styled spikes!
+      // Danger zones: Beautiful Cardón green cacti styled of spiky structures!
       blocks.push({ id: 'desert-cactus-spike1', x: 68, y: 12, type: 'spike' });
       blocks.push({ id: 'desert-cactus-spike2', x: 71, y: 12, type: 'spike' });
-
     } else if (theme === 'cave') {
       // Ceiling blocks
       for (let tx = 0; tx < totalTiles; tx++) {
