@@ -62,18 +62,39 @@ export default function GameCanvas({
     // Auto-detect touch device & default touch features - kept false by default to prevent duplication with bottom gamepad
     setShowTouchOverlay(false);
 
-    // 1. Try multiple filename permutations for the background image
-    const bgFilenames = [
-      'fondo_nivel_1.png',
-      'nivel_1_fondo.png',
-      'fondo1.png',
-      'background.png',
-      'assets/fondo_nivel_1.png',
-      'assets/nivel_1_fondo.png',
-      'src/assets/fondo_nivel_1.png'
-    ];
+    // 1. Load Background Image
+    const savedBg = localStorage.getItem('local_bg_nivel_1_base64');
+    if (savedBg) {
+      const img = new Image();
+      img.src = savedBg;
+      img.onload = () => {
+        if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+          backgroundImgRef.current = img;
+          setBgFileLoaded(true);
+          console.log('🎉 Level 1 custom background loaded from secure browser storage!');
+        } else {
+          localStorage.removeItem('local_bg_nivel_1_base64');
+          loadBgImageFromFileSystem(0);
+        }
+      };
+      img.onerror = () => {
+        localStorage.removeItem('local_bg_nivel_1_base64');
+        loadBgImageFromFileSystem(0);
+      };
+    } else {
+      loadBgImageFromFileSystem(0);
+    }
 
-    const loadBgImage = (index: number) => {
+    function loadBgImageFromFileSystem(index: number) {
+      const bgFilenames = [
+        'fondo_nivel_1.png',
+        'nivel_1_fondo.png',
+        'fondo1.png',
+        'background.png',
+        'assets/fondo_nivel_1.png',
+        'assets/nivel_1_fondo.png',
+        'src/assets/fondo_nivel_1.png'
+      ];
       if (index >= bgFilenames.length) {
         console.log('No custom level 1 background image found in server directories. Relying on gorgeous vector graphics fallback!');
         return;
@@ -83,9 +104,13 @@ export default function GameCanvas({
       img.src = srcPath.startsWith('/') ? srcPath : '/' + srcPath;
       
       img.onload = () => {
-        backgroundImgRef.current = img;
-        setBgFileLoaded(true);
-        console.log(`🎉 Custom background for Level 1 successfully loaded from: ${srcPath}`);
+        if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+          backgroundImgRef.current = img;
+          setBgFileLoaded(true);
+          console.log(`🎉 Custom background for Level 1 successfully loaded from: ${srcPath}`);
+        } else {
+          loadBgImageFromFileSystem(index + 1);
+        }
       };
       
       img.onerror = () => {
@@ -93,32 +118,60 @@ export default function GameCanvas({
           const alternateImg = new Image();
           alternateImg.src = '/public/' + bgFilenames[index];
           alternateImg.onload = () => {
-            backgroundImgRef.current = alternateImg;
-            setBgFileLoaded(true);
-            console.log(`🎉 Custom background for Level 1 successfully loaded from: /public/${bgFilenames[index]}`);
+            if (alternateImg.naturalWidth > 0 && alternateImg.naturalHeight > 0) {
+              backgroundImgRef.current = alternateImg;
+              setBgFileLoaded(true);
+              console.log(`🎉 Custom background for Level 1 successfully loaded from: /public/${bgFilenames[index]}`);
+            } else {
+              loadBgImageFromFileSystem(index + 1);
+            }
           };
           alternateImg.onerror = () => {
-            loadBgImage(index + 1);
+            loadBgImageFromFileSystem(index + 1);
           };
         } else {
-          loadBgImage(index + 1);
+          loadBgImageFromFileSystem(index + 1);
         }
       };
-    };
+    }
 
-    loadBgImage(0);
+    // 2. Load Mario Image
+    const savedMario = localStorage.getItem('local_mario_sprite_base64');
+    if (savedMario) {
+      const img = new Image();
+      img.src = savedMario;
+      img.onload = () => {
+        if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+          marioSpriteImgRef.current = img;
+          setMarioFileLoaded(true);
+          console.log('🎉 Custom Mario sprite loaded from secure browser storage!');
+          const s = stateRef.current;
+          if (s && (levelId === 'level1' || levelId === 'level2' || levelId === 'level6')) {
+            s.playerType = 'mario';
+            setActivePlayerType('mario');
+          }
+        } else {
+          localStorage.removeItem('local_mario_sprite_base64');
+          loadMarioFromFileSystem(0);
+        }
+      };
+      img.onerror = () => {
+        localStorage.removeItem('local_mario_sprite_base64');
+        loadMarioFromFileSystem(0);
+      };
+    } else {
+      loadMarioFromFileSystem(0);
+    }
 
-    // 2. Try multiple filename permutations for the Mario sprite
-    const marioFilenames = [
-      'mario.png',
-      'mario_spritesheet.png',
-      'super_mario.png',
-      'sprites/mario.png',
-      'assets/mario.png',
-      'src/assets/mario.png'
-    ];
-
-    const loadMarioImage = (index: number) => {
+    function loadMarioFromFileSystem(index: number) {
+      const marioFilenames = [
+        'mario.png',
+        'mario_spritesheet.png',
+        'super_mario.png',
+        'sprites/mario.png',
+        'assets/mario.png',
+        'src/assets/mario.png'
+      ];
       if (index >= marioFilenames.length) {
         console.log('No custom Mario PNG sprite sheet found in server directories. Relying on retro 16-bit canvas matrix drawer!');
         return;
@@ -128,9 +181,18 @@ export default function GameCanvas({
       img.src = srcPath.startsWith('/') ? srcPath : '/' + srcPath;
 
       img.onload = () => {
-        marioSpriteImgRef.current = img;
-        setMarioFileLoaded(true);
-        console.log(`🎉 Custom Mario sprite successfully loaded from: ${srcPath}`);
+        if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+          marioSpriteImgRef.current = img;
+          setMarioFileLoaded(true);
+          console.log(`🎉 Custom Mario sprite successfully loaded from: ${srcPath}`);
+          const s = stateRef.current;
+          if (s && (levelId === 'level1' || levelId === 'level2' || levelId === 'level6')) {
+            s.playerType = 'mario';
+            setActivePlayerType('mario');
+          }
+        } else {
+          loadMarioFromFileSystem(index + 1);
+        }
       };
       
       img.onerror = () => {
@@ -138,21 +200,28 @@ export default function GameCanvas({
           const alternateImg = new Image();
           alternateImg.src = '/public/' + marioFilenames[index];
           alternateImg.onload = () => {
-            marioSpriteImgRef.current = alternateImg;
-            setMarioFileLoaded(true);
-            console.log(`🎉 Custom Mario sprite successfully loaded from: /public/${marioFilenames[index]}`);
+            if (alternateImg.naturalWidth > 0 && alternateImg.naturalHeight > 0) {
+              marioSpriteImgRef.current = alternateImg;
+              setMarioFileLoaded(true);
+              console.log(`🎉 Custom Mario sprite successfully loaded from: /public/${marioFilenames[index]}`);
+              const s = stateRef.current;
+              if (s && (levelId === 'level1' || levelId === 'level2' || levelId === 'level6')) {
+                s.playerType = 'mario';
+                setActivePlayerType('mario');
+              }
+            } else {
+              loadMarioFromFileSystem(index + 1);
+            }
           };
           alternateImg.onerror = () => {
-            loadMarioImage(index + 1);
+            loadMarioFromFileSystem(index + 1);
           };
         } else {
-          loadMarioImage(index + 1);
+          loadMarioFromFileSystem(index + 1);
         }
       };
-    };
-
-    loadMarioImage(0);
-  }, []);
+    }
+  }, [levelId]);
   
   // Refs to hold mutable, high-frequency game loop data (avoids react state re-render lag)
   const stateRef = useRef({
@@ -417,6 +486,11 @@ export default function GameCanvas({
     else if (levelId === 'level4') pType = 'bike';
     else if (levelId === 'level5') pType = 'catquad';
     else if (levelId === 'level6') pType = 'brocoliano';
+    
+    // Auto-override player type to 'mario' when custom Mario sprite is loaded for playable human character levels!
+    if (marioFileLoaded && (levelId === 'level1' || levelId === 'level2' || levelId === 'level6')) {
+      pType = 'mario';
+    }
     
     s.playerType = pType;
     setActivePlayerType(pType);
@@ -2780,8 +2854,18 @@ export default function GameCanvas({
 
     if (theme === 'green') {
       if (bgFileLoaded && backgroundImgRef.current) {
-        // Draw the uploaded high-resolution retro background directly, aligned to the camera scroll!
-        ctx.drawImage(backgroundImgRef.current, -camX, 0, 2400, canvas.height);
+        // High-resolution or custom background drawing
+        const bgImg = backgroundImgRef.current;
+        const imgW = bgImg.naturalWidth || bgImg.width || 800;
+        if (imgW <= 800) {
+          // Tile the image across the entire level length (2400) so there are no empty gaps
+          for (let bgX = 0; bgX < 2400; bgX += imgW) {
+            ctx.drawImage(bgImg, bgX - camX, 0, imgW, canvas.height);
+          }
+        } else {
+          // If it's a wide panoramic image, stretch/align it directly across the 2400px level limits
+          ctx.drawImage(bgImg, -camX, 0, 2400, canvas.height);
+        }
       } else {
         // 1. Celestial blue sky gradient (matches the transparent grid blue vibe with clean morning sun)
         const skyGrad = ctx.createLinearGradient(0, 0, 0, canvas.height);
@@ -6084,39 +6168,162 @@ export default function GameCanvas({
       </div>
 
       {/* Visual Asset Integration Monitor */}
-      <div className="w-full max-w-2xl bg-zinc-950/80 p-4 rounded-2xl border border-zinc-800 mt-3 text-zinc-400 font-mono text-[10px] flex flex-col gap-2">
-        <span className="font-bold text-zinc-300 flex items-center gap-2">
-          📁 INTEGRACIÓN DE TUS ARCHIVOS PNG:
+      {/* Visual Asset Integration Monitor & Direct Uploader */}
+      <div className="w-full max-w-2xl bg-zinc-950/80 p-4 rounded-2xl border border-zinc-800 mt-3 text-zinc-400 font-mono text-[10px] flex flex-col gap-2 shadow-2xl">
+        <span className="font-bold text-zinc-300 flex items-center gap-2 text-xs">
+          📁 INTEGRACIÓN DIRECTA DE ARCHIVOS PNG (NIVEL 1 Y MARIO):
         </span>
-        <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between text-[11px] border-t border-zinc-900 pt-2 mt-1">
-          <div className="flex items-center gap-2.5">
-            <span className="text-zinc-500">Nivel 1 Fondo (fondo_nivel_1.png):</span>
-            {bgFileLoaded ? (
-              <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-extrabold border border-emerald-500/30 flex items-center gap-1 animate-pulse">
-                ● DETECTADO Y EN USO
-              </span>
-            ) : (
-              <span className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-500 font-bold border border-amber-500/20">
-                ○ VECTOR FALLBACK ACTIVO
-              </span>
-            )}
+        <p className="text-[9px] text-zinc-500 leading-normal">
+          Para ver tus imágenes personalizadas, puedes subirlas directamente aquí (se guardan de forma instantánea y persistente por local storage) o colocarlas en el editor de código con los mismos nombres.
+        </p>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-zinc-900 pt-3 mt-1 text-[11px]">
+          {/* BACKGROUND LEVEL 1 COMPONENT */}
+          <div className="flex flex-col gap-1.5 p-2.5 rounded-xl bg-zinc-900/60 border border-zinc-800/40">
+            <div className="flex items-center justify-between">
+              <span className="text-zinc-300 font-semibold">1. Fondo Nivel 1:</span>
+              {bgFileLoaded ? (
+                <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-bold border border-emerald-500/20 animate-pulse">
+                  ACTIVO
+                </span>
+              ) : (
+                <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-500 font-bold border border-amber-500/20">
+                  PREDETERMINADO
+                </span>
+              )}
+            </div>
+            
+            {/* Choose background file input */}
+            <div className="flex gap-2 items-center mt-1">
+              <label className="flex-1 flex items-center justify-center h-7 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded cursor-pointer text-center text-[10px] transition font-bold border border-zinc-700">
+                <span>📂 IMPORTAR FONDO</span>
+                <input
+                  type="file"
+                  accept="image/png"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      const reader = new FileReader();
+                      reader.onload = (event) => {
+                        const base64 = event.target?.result as string;
+                        localStorage.setItem('local_bg_nivel_1_base64', base64);
+                        
+                        const img = new Image();
+                        img.src = base64;
+                        img.onload = () => {
+                          backgroundImgRef.current = img;
+                          setBgFileLoaded(true);
+                          audio.playPowerUp();
+                        };
+                      };
+                      reader.readAsDataURL(file);
+                    }
+                  }}
+                  className="hidden"
+                />
+              </label>
+
+              {bgFileLoaded && (
+                <button
+                  onClick={() => {
+                    localStorage.removeItem('local_bg_nivel_1_base64');
+                    backgroundImgRef.current = null;
+                    setBgFileLoaded(false);
+                    audio.playPowerDown();
+                  }}
+                  className="px-2 h-7 bg-red-950/40 hover:bg-red-950/80 border border-red-900/40 text-red-400 font-bold rounded transition text-[10px]"
+                >
+                  BORRAR
+                </button>
+              )}
+            </div>
+            <span className="text-[8px] text-zinc-500">Recomendado: 800x480 o 2400x480 PNG (fondo_nivel_1.png)</span>
           </div>
-          <div className="flex items-center gap-2.5">
-            <span className="text-zinc-500">Personaje Mario (mario.png):</span>
-            {marioFileLoaded ? (
-              <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-extrabold border border-emerald-500/30 flex items-center gap-1 animate-pulse">
-                ● DETECTADO Y EN USO
-              </span>
-            ) : (
-              <span className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-500 font-bold border border-amber-500/20">
-                ○ SPRITE MATRIX RETRO ACTIVO
-              </span>
-            )}
+
+          {/* MARIO SPRITE COMPONENT */}
+          <div className="flex flex-col gap-1.5 p-2.5 rounded-xl bg-zinc-900/60 border border-zinc-800/40">
+            <div className="flex items-center justify-between">
+              <span className="text-zinc-300 font-semibold">2. Personaje Mario:</span>
+              {marioFileLoaded ? (
+                <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-bold border border-emerald-500/20 animate-pulse">
+                  ACTIVO
+                </span>
+              ) : (
+                <span className="text-[9px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-500 font-bold border border-amber-500/20">
+                  RETRO MATRIX
+                </span>
+              )}
+            </div>
+
+            {/* Choose Mario file input */}
+            <div className="flex gap-2 items-center mt-1">
+              <label className="flex-1 flex items-center justify-center h-7 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded cursor-pointer text-center text-[10px] transition font-bold border border-zinc-700">
+                <span>📂 IMPORTAR SPRITE</span>
+                <input
+                  type="file"
+                  accept="image/png"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      const reader = new FileReader();
+                      reader.onload = (event) => {
+                        const base64 = event.target?.result as string;
+                        localStorage.setItem('local_mario_sprite_base64', base64);
+                        
+                        const img = new Image();
+                        img.src = base64;
+                        img.onload = () => {
+                          marioSpriteImgRef.current = img;
+                          setMarioFileLoaded(true);
+                          
+                          // Set player to mario immediately
+                          const s = stateRef.current;
+                          if (s) {
+                            s.playerType = 'mario';
+                            setActivePlayerType('mario');
+                          }
+                          audio.playPowerUp();
+                        };
+                      };
+                      reader.readAsDataURL(file);
+                    }
+                  }}
+                  className="hidden"
+                />
+              </label>
+
+              {marioFileLoaded && (
+                <button
+                  onClick={() => {
+                    localStorage.removeItem('local_mario_sprite_base64');
+                    marioSpriteImgRef.current = null;
+                    setMarioFileLoaded(false);
+                    const s = stateRef.current;
+                    if (s) {
+                      let origType: 'explorer' | 'glasses' | 'truck' | 'bike' | 'catquad' | 'brocoliano' | 'mario' = 'explorer';
+                      if (levelId === 'level2') origType = 'glasses';
+                      else if (levelId === 'level3') origType = 'truck';
+                      else if (levelId === 'level4') origType = 'bike';
+                      else if (levelId === 'level5') origType = 'catquad';
+                      else if (levelId === 'level6') origType = 'brocoliano';
+                      s.playerType = origType;
+                      setActivePlayerType(origType);
+                    }
+                    audio.playPowerDown();
+                  }}
+                  className="px-2 h-7 bg-red-950/40 hover:bg-red-950/80 border border-red-900/40 text-red-400 font-bold rounded transition text-[10px]"
+                >
+                  BORRAR
+                </button>
+              )}
+            </div>
+            <span className="text-[8px] text-zinc-500">Soporta: Imagen simple o Sprite Sheet horizontal (mario.png)</span>
           </div>
         </div>
-        <p className="text-[9px] text-zinc-500 mt-1">
-          💡 <span className="text-zinc-400">¿Cómo usar tus archivos exactos?</span> Para que el juego los cargue, sube tus imágenes directamente al <span className="text-zinc-300 font-bold">explorador de archivos en el editor de código</span> con los nombres exactos: <code className="text-zinc-300 font-semibold bg-zinc-900 px-1 py-0.5 rounded">fondo_nivel_1.png</code> y <code className="text-zinc-200 font-semibold bg-zinc-900 px-1 py-0.5 rounded">mario.png</code> en la carpeta raíz del proyecto. El juego se actualizará y detectará los archivos de forma automática y transparente.
-        </p>
+
+        <div className="flex justify-between items-center bg-zinc-900/40 px-2 py-1.5 rounded-lg border border-zinc-800/30 text-[9px] text-zinc-500 mt-1">
+          <span>💡 Presiona la tecla <kbd className="px-1 bg-zinc-800 text-zinc-300 rounded">M</kbd> en tu teclado para alternar entre Mario y el personaje normal.</span>
+        </div>
       </div>
     </div>
   );
